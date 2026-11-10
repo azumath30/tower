@@ -1,0 +1,1702 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>タイルマップ</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #1b1b24;
+    color: #ddd;
+    font-family: "Segoe UI", "Meiryo", sans-serif;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  canvas {
+    image-rendering: pixelated;      /* ドット絵をぼかさず拡大 */
+    border: 3px solid #3a3a4a;
+    border-radius: 6px;
+    background: #000;
+    touch-action: none;
+  }
+  #help { font-size: 14px; color: #999; }
+  #hud {
+    font-size: 18px;
+    font-weight: bold;
+    color: #ffd84a;
+    letter-spacing: 1px;
+  }
+  #hud.up { animation: expUp 0.4s; }
+  @keyframes expUp { 0% { transform: scale(1.4); color: #fff; } 100% { transform: scale(1); } }
+  #joy {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 960px;
+    gap: 10px;
+    font-size: 14px;
+  }
+  .serialBtn {
+    padding: 6px 14px;
+    font-size: 14px;
+    border: none;
+    border-radius: 8px;
+    background: #2f7d4f;
+    color: #fff;
+    cursor: pointer;
+  }
+  .serialBtn:hover { background: #3a9862; }
+  .serialBtn.connected { background: #8a3a3a; }
+  .serialStatus { color: #999; }
+  #floorSel { font-size: 14px; padding: 3px; }
+
+  /* スマホ・タブレット用の十字キー */
+  #pad {
+    display: grid;
+    grid-template-columns: repeat(3, 56px);
+    grid-template-rows: repeat(2, 56px);
+    gap: 6px;
+    user-select: none;
+  }
+  #pad button {
+    font-size: 22px;
+    border: none;
+    border-radius: 10px;
+    background: #3a3a4a;
+    color: #fff;
+    touch-action: none;
+  }
+  #pad button:active { background: #5a5a70; }
+  #pad .up { grid-column: 2; grid-row: 1; }
+  #pad .left { grid-column: 1; grid-row: 2; }
+  #pad .down { grid-column: 2; grid-row: 2; }
+  #pad .right { grid-column: 3; grid-row: 2; }
+  #pad .fire { grid-column: 3; grid-row: 1; background: #a8442e; }
+  @media (hover: hover) and (pointer: fine) { #pad { display: none; } }
+</style>
+</head>
+<body>
+<div id="hud"><span id="floorNo">1</span>かい　EXP <span id="exp">0</span></div>
+<canvas id="game" width="320" height="224"></canvas>
+<div id="help">矢印キー / WASD / ジョイスティック で移動　スペースキー / ボタンR0 で玉（敵の数だけ続けて当てる）</div>
+<div id="joy">
+  <label>スタートの階 <select id="floorSel"></select></label>
+  <button id="joyBtn" class="serialBtn">ジョイスティック 接続</button>
+  <span id="joyStatus" class="serialStatus">未接続</span>
+  <button id="btnBtn" class="serialBtn">ボタン 接続</button>
+  <span id="btnStatus" class="serialStatus">未接続</span>
+  <button id="bgmBtn" class="serialBtn">♪ BGM オン</button>
+</div>
+<div id="pad">
+  <button class="up" data-dir="up">▲</button>
+  <button class="left" data-dir="left">◀</button>
+  <button class="down" data-dir="down">▼</button>
+  <button class="right" data-dir="right">▶</button>
+  <button class="fire" id="fireBtn">●</button>
+</div>
+
+<script>
+// ━━━━━━━━━━━━━━━━ 設定 ━━━━━━━━━━━━━━━━
+const TILE = 16;                 // タイル1枚の大きさ(px)
+const SHEET_COLS = 12;           // tiles.png の横のタイル数
+const VIEW_W = 20, VIEW_H = 14;  // 画面に映すタイル数（320×224px）
+const WALK_SPEED = 5;            // 1秒に進むタイル数
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+// ━━━━━━━━━━━━━━━━ タイル番号（tiles.png の左上から 0,1,2…） ━━━━━━━━━━━━━━━━
+// 3×3 で組むタイル: [左上, 上, 右上, 左, 中, 右, 左下, 下, 右下]
+const SET_FOREST = [6, 7, 8, 18, 19, 20, 30, 31, 32];        // 緑の森
+const SET_ORANGE = [9, 10, 11, 21, 22, 23, 33, 34, 35];      // 紅葉の森
+const SET_DIRT   = [12, 13, 14, 24, 25, 26, 36, 37, 38];     // 土の広場
+const T = {
+  grass: 0, grassTuft: 1, flowers: 2, stone: 43,
+  treeG: 16, treeGs: 28, treeO: 15, treeOs: 27, bush: 5,
+  sprout: 17, mushroom: 29, sign: 83, well: 104, hive: 94,
+  log: 106, pot: 107, bucket: 130, target: 95, door: 103, key: 117,
+};
+
+// ━━━━━━━━━━━━━━━━ マップ作成（階ごとに自動で作る） ━━━━━━━━━━━━━━━━
+// 階が上がるたびにマップが広くなり、建物・林・道の配置も変わる。
+// 同じ階は毎回同じマップになる（階の番号を乱数の種にしている）。
+// ground: 地面（歩ける） / obj: 地面の上に置く物（null 以外は通れない）
+let MAP_W = 24, MAP_H = 18;      // マップ全体のタイル数（階ごとに変わる）
+let ground = [];
+let obj = [];
+let reachable = [];              // スタートから歩いて行けるマスの一覧 [x, y]
+let START_X = 12, START_Y = 9;   // スタート地点（広場のまん中）
+
+const MAP_SIZE_FIRST = [24, 18]; // 1階の広さ（画面は 20×14 マス）
+const MAP_SIZE_GROW = [4, 3];    // 1階上がるごとに広がるマス数
+const MAP_SIZE_MAX = [60, 45];   // いちばん広いとき
+
+let seed = 12345;
+function rand() {
+  seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+  return seed / 0x7fffffff;
+}
+const randInt = (a, b) => a + Math.floor(rand() * (b - a + 1));
+const randPick = arr => arr[Math.floor(rand() * arr.length)];
+
+// 四角い範囲の形を、3×3 のタイルセットで縁取りしながら並べる
+function autotile(layer, cells, set) {
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      if (!cells(x, y)) continue;
+      const n = cells(x, y - 1), s = cells(x, y + 1), w = cells(x - 1, y), e = cells(x + 1, y);
+      const row = !n ? 0 : !s ? 2 : 1;
+      const col = !w ? 0 : !e ? 2 : 1;
+      layer[y][x] = set[row * 3 + col];
+    }
+  }
+}
+const inRect = (x0, y0, x1, y1) => (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+
+// 建物の形（null は何も置かない）。door: ドアの位置（道をつなぐ）
+const BUILDINGS = [
+  { name: '城', rows: [[99, 100, 100, 101], [111, 112, 113, 114], [123, 124, 125, 126]], door: [2, 2] },
+  { name: '灰色の家', rows: [[48, 49, 50], [60, 61, 62], [72, 85, 75]], door: [1, 2] },
+  { name: '石の家', rows: [[52, 53, 53, 54], [64, 65, 65, 66], [76, 77, 89, 79]], door: [2, 2] },
+  { name: '木の家', rows: [[52, 53, 54], [64, 65, 66], [84, 86, 87]], door: [1, 2] },
+  { name: '畑', rows: [[44, 45, 45, 45, 46], [56, 17, 17, 17, 58], [56, 29, 17, 29, 58], [68, 69, 69, 69, 70]], door: null },
+];
+const PROPS = [T.treeG, T.treeGs, T.treeO, T.treeOs, T.bush, T.bush, T.mushroom,
+  T.pot, T.log, T.bucket, T.hive, T.target, T.sign, T.flowers];
+
+function generateMap(f) {
+  seed = 12345 + f * 7919;
+  MAP_W = Math.min(MAP_SIZE_MAX[0], MAP_SIZE_FIRST[0] + (f - 1) * MAP_SIZE_GROW[0]);
+  MAP_H = Math.min(MAP_SIZE_MAX[1], MAP_SIZE_FIRST[1] + (f - 1) * MAP_SIZE_GROW[1]);
+  ground = [];
+  obj = [];
+  const used = [];               // 建物・林・広場・道を置いたマス（ほかの物を重ねない）
+  for (let y = 0; y < MAP_H; y++) {
+    ground.push([]); obj.push([]); used.push([]);
+    for (let x = 0; x < MAP_W; x++) {
+      const r = rand();
+      ground[y].push(r < 0.8 ? T.grass : r < 0.92 ? T.grassTuft : T.flowers);
+      obj[y].push(null);
+      used[y].push(false);
+    }
+  }
+  const free = (x0, y0, x1, y1) => {   // 範囲（まわり1マスも含む）があいているか
+    for (let y = y0 - 1; y <= y1 + 1; y++) for (let x = x0 - 1; x <= x1 + 1; x++) {
+      if (x < 2 || y < 2 || x >= MAP_W - 2 || y >= MAP_H - 2 || used[y][x]) return false;
+    }
+    return true;
+  };
+  const mark = (x0, y0, x1, y1) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) used[y][x] = true; };
+
+  // 外周の森（偶数階は紅葉の森。マップの外も森として扱い、外側に縁ができないようにする）
+  const border = f % 2 === 0 ? SET_ORANGE : SET_FOREST;
+  autotile(obj, (x, y) => x < 2 || y < 2 || x >= MAP_W - 2 || y >= MAP_H - 2, border);
+
+  // まん中の土の広場（スタート地点）と井戸
+  START_X = Math.floor(MAP_W / 2);
+  START_Y = Math.floor(MAP_H / 2);
+  const px0 = START_X - 3, py0 = START_Y - 2, px1 = START_X + 2, py1 = START_Y + 2;
+  autotile(ground, inRect(px0, py0, px1, py1), SET_DIRT);
+  obj[START_Y][START_X - 1] = T.well;
+  mark(px0, py0, px1, py1);
+
+  // 道：(x, y) から広場へ、たて → よこ の順に石畳をしく
+  const roadTo = (x, y) => {
+    const ty = Math.max(py0, Math.min(py1, y));
+    for (let yy = Math.min(y, ty); yy <= Math.max(y, ty); yy++) if (ground[yy][x] !== undefined && !obj[yy][x]) { ground[yy][x] = T.stone; used[yy][x] = true; }
+    const tx = Math.max(px0, Math.min(px1, x));
+    for (let xx = Math.min(x, tx); xx <= Math.max(x, tx); xx++) if (!obj[ty][xx] && !(xx >= px0 && xx <= px1 && ty >= py0 && ty <= py1)) { ground[ty][xx] = T.stone; used[ty][xx] = true; }
+  };
+
+  // 建物（広いマップほどたくさん）
+  const area = MAP_W * MAP_H;
+  const nBuild = 2 + Math.floor(area / 220);
+  for (let i = 0, tries = 0; i < nBuild && tries < 300; tries++) {
+    const b = i === 0 ? BUILDINGS[0] : randPick(BUILDINGS.slice(1));   // 1つ目は必ず城
+    const bw = b.rows[0].length, bh = b.rows.length;
+    const x0 = randInt(2, MAP_W - 3 - bw), y0 = randInt(2, MAP_H - 4 - bh);
+    if (!free(x0, y0, x0 + bw - 1, y0 + bh)) continue;   // ドアの前の1マスもあける
+    b.rows.forEach((row, dy) => row.forEach((t, dx) => { if (t !== null) obj[y0 + dy][x0 + dx] = t; }));
+    mark(x0, y0, x0 + bw - 1, y0 + bh - 1);
+    if (b.door) roadTo(x0 + b.door[0], y0 + b.door[1] + 1);
+    i++;
+  }
+
+  // 林のかたまり（緑と紅葉がまざる）
+  const nClump = 2 + Math.floor(area / 120);
+  for (let i = 0, tries = 0; i < nClump && tries < 400; tries++) {
+    const w = randInt(3, 5), h = randInt(3, 4);
+    const x0 = randInt(2, MAP_W - 2 - w), y0 = randInt(2, MAP_H - 2 - h);
+    if (!free(x0, y0, x0 + w - 1, y0 + h - 1)) continue;
+    autotile(obj, inRect(x0, y0, x0 + w - 1, y0 + h - 1), rand() < 0.6 ? SET_FOREST : SET_ORANGE);
+    mark(x0, y0, x0 + w - 1, y0 + h - 1);
+    i++;
+  }
+
+  // 木や小物をちらばらせる（道や広場の上には置かない）
+  const nProp = Math.floor(area / 22);
+  for (let i = 0; i < nProp; i++) {
+    const x = randInt(2, MAP_W - 3), y = randInt(2, MAP_H - 3);
+    if (used[y][x] || obj[y][x] !== null) continue;
+    obj[y][x] = randPick(PROPS);
+  }
+
+  // スタートから歩いて行けるマスを調べる（行けない場所に敵や扉を置かないため）
+  reachable = floodFrom(START_X, START_Y, null);
+}
+
+// (sx, sy) から歩いて行けるマスの一覧。block のマスは通れないものとして調べる
+function floodFrom(sx, sy, block) {
+  const seen = new Set([sy * MAP_W + sx]);
+  const list = [[sx, sy]];
+  for (let i = 0; i < list.length; i++) {
+    const [x, y] = list[i];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy, k = ny * MAP_W + nx;
+      if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H || seen.has(k) || obj[ny][nx] !== null) continue;
+      if (block && block[0] === nx && block[1] === ny) continue;
+      seen.add(k);
+      list.push([nx, ny]);
+    }
+  }
+  return list;
+}
+
+// 扉の場所：スタートから遠く、そこをふさいでもほかの場所へ行けるマス
+function chooseDoor() {
+  const far = reachable
+    .filter(([x, y]) => Math.abs(x - START_X) + Math.abs(y - START_Y) >= 8)
+    .sort((a, b) => (Math.abs(b[0] - START_X) + Math.abs(b[1] - START_Y)) -
+                    (Math.abs(a[0] - START_X) + Math.abs(a[1] - START_Y)));
+  // いちばん遠い所ばかりにならないよう、遠い方の半分からランダムに選ぶ
+  const cands = far.slice(0, Math.max(1, Math.floor(far.length / 2)));
+  for (let i = 0; i < 40 && cands.length; i++) {
+    const [x, y] = cands.splice(Math.floor(rand() * cands.length), 1)[0];
+    if (floodFrom(START_X, START_Y, [x, y]).length === reachable.length - 1) return { x, y };
+  }
+  return far.length ? { x: far[0][0], y: far[0][1] } : null;
+}
+
+// カギができるまで、扉のマスは通れない
+const isWalkable = (x, y) =>
+  x >= 0 && y >= 0 && x < MAP_W && y < MAP_H && obj[y][x] === null && !(isDoor(x, y) && !keyDone);
+
+// ━━━━━━━━━━━━━━━━ 主人公のドット絵（16×16） ━━━━━━━━━━━━━━━━
+const PALETTE = {
+  k: '#2b1d2a', h: '#8a4b2a', s: '#f2c29b', e: '#2b1d2a',
+  b: '#3f6fd8', B: '#2c4fa3', w: '#e0b040', l: '#5a3a28',
+};
+// 頭（8行）を向きごとに組み立てる。'..k' + 中身10文字 + 'k..' で幅16
+function headRows(kind) {
+  const L = '..k', R = 'k..';
+  const top = ['................', '....kkkkkkkk....', '...khhhhhhhhk...', L + 'hhhhhhhhhh' + R];
+  if (kind === 'down') return top.concat([
+    L + 'hsssssssss'.slice(0, 9) + 'h' + R,
+    L + 'ssessssess' + R,
+    L + 'ssssssssss' + R,
+    '...kkssssssk' + 'k...',
+  ]);
+  if (kind === 'up') return top.concat([
+    L + 'hhhhhhhhhh' + R,
+    L + 'hhhhhhhhhh' + R,
+    L + 'hhhhhhhhhh' + R,
+    '...kkhhhhhhk' + 'k...',
+  ]);
+  // 右向き
+  return top.concat([
+    L + 'hhhhhhssss' + R,
+    L + 'hhhhhsssse' + R,
+    L + 'hhhhhsssss' + R,
+    '...kkhhsssss' + 'k...',
+  ]);
+}
+const BODY = [
+  '..kbbbbbbbbbbk..',
+  '.ksbbbbbbbbbbsk.',
+  '.ksbbbbbbbbbbsk.',
+  '..kwwwwwwwwwwk..',
+];
+const LEGS = [
+  ['...kllk..kllk...', '...kllk..kllk...', '...kkkk..kkkk...'],  // 立ち
+  ['...kllk..kllk...', '...kkkk..kllk...', '.........kkkk...'],  // 歩き1
+  ['...kllk..kllk...', '...kllk..kkkk...', '...kkkk.........'],  // 歩き2
+];
+function makeSprite(kind, legFrame) {
+  const rows = headRows(kind).concat(BODY, [LEGS[legFrame][0].replace(/l/g, 'B')], LEGS[legFrame]);
+  const c = document.createElement('canvas');
+  c.width = c.height = TILE;
+  const g = c.getContext('2d');
+  rows.slice(0, 16).forEach((row, y) => {
+    for (let x = 0; x < 16; x++) {
+      const col = PALETTE[row[x]];
+      if (col) { g.fillStyle = col; g.fillRect(x, y, 1, 1); }
+    }
+  });
+  return c;
+}
+function mirror(src) {
+  const c = document.createElement('canvas');
+  c.width = c.height = TILE;
+  const g = c.getContext('2d');
+  g.translate(TILE, 0);
+  g.scale(-1, 1);
+  g.drawImage(src, 0, 0);
+  return c;
+}
+// SPRITES[向き][コマ]  コマ0=立ち, 1・2=歩き
+const SPRITES = {};
+for (const kind of ['down', 'up', 'right']) {
+  SPRITES[kind] = [0, 1, 2].map(f => makeSprite(kind, f));
+}
+SPRITES.left = SPRITES.right.map(mirror);
+// やられたときに点滅させる、真っ白な主人公
+const HERO_WHITE = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = TILE;
+  const g = c.getContext('2d');
+  g.drawImage(SPRITES.down[0], 0, 0);
+  g.globalCompositeOperation = 'source-atop';
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, TILE, TILE);
+  return c;
+})();
+
+// ━━━━━━━━━━━━━━━━ 主人公 ━━━━━━━━━━━━━━━━
+const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+const hero = {
+  tx: 16, ty: 13,        // 今いるマス
+  fromX: 16, fromY: 13,  // 移動元のマス
+  progress: 0,           // 移動の進み具合 0〜1
+  moving: false,
+  dir: 'down',
+  step: 0,               // 歩いた歩数（足の動きの切り替え用）
+  shotRange: 5,          // 玉が届く距離（マス）。アイテムで伸ばす予定
+};
+
+// 押されている方向（後から押したものを優先）
+const held = [];
+function press(d) { if (!held.includes(d)) held.push(d); }
+function release(d) { const i = held.indexOf(d); if (i >= 0) held.splice(i, 1); }
+const KEYMAP = {
+  ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+  w: 'up', s: 'down', a: 'left', d: 'right',
+  W: 'up', S: 'down', A: 'left', D: 'right',
+};
+addEventListener('keydown', e => {
+  const d = KEYMAP[e.key];
+  if (d) { press(d); e.preventDefault(); }
+  // 押しっぱなしの自動くり返しは数えない（押した回数だけ撃つ）
+  if (e.code === 'Space' || e.key === 'Enter') { if (!e.repeat) fire(); e.preventDefault(); }
+});
+addEventListener('keyup', e => { const d = KEYMAP[e.key]; if (d) release(d); });
+addEventListener('blur', () => { held.length = 0; });
+document.getElementById('fireBtn').addEventListener('pointerdown', () => fire());
+document.querySelectorAll('#pad button[data-dir]').forEach(btn => {
+  const d = btn.dataset.dir;
+  btn.addEventListener('pointerdown', e => { press(d); btn.setPointerCapture(e.pointerId); });
+  btn.addEventListener('pointerup', () => release(d));
+  btn.addEventListener('pointercancel', () => release(d));
+});
+
+// ━━━━━━━━━━━━━━━━ Arduino 2台（Web Serial・どちらも 9600bps） ━━━━━━━━━━━━━━━━
+// ① ジョイスティック（20261107joystick.ino）が送る文字:
+//   UP / RIGHT / DOWN / LEFT（倒した）  UP_OFF など（戻した）
+//   READY（起動した）  STATE:上右下左（"?" を送ったときの今の状態。例 STATE:1100）
+// ② 10個ボタンが送る文字: R0〜R9（押した）。今は R0 で玉を発射
+//
+// どちらのポートから来た文字も同じように読むので、
+// 「ジョイスティック接続」でボタンの方を選んでしまっても、そのまま動く。
+const JOY_NAMES = { UP: 'up', RIGHT: 'right', DOWN: 'down', LEFT: 'left' };
+const JOY_ORDER = ['up', 'right', 'down', 'left'];   // STATE の並び順
+const BUTTON_ACTIONS = {
+  R0: () => fire(),
+  // R1〜R9 はあとで使う（例: R1: () => useItem()）
+};
+
+async function sendText(dev, text) {
+  try {
+    const writer = dev.port.writable.getWriter();
+    await writer.write(new TextEncoder().encode(text));
+    writer.releaseLock();
+  } catch (e) { /* 送れなくても操作はできるので無視 */ }
+}
+
+// 1行ぶんの文字を処理する。dev = どのArduinoから来たか
+function handleSerialLine(dev, line) {
+  if (BUTTON_ACTIONS[line]) {
+    dev.kind = 'ボタン';
+    BUTTON_ACTIONS[line]();
+  } else if (/^R\d$/.test(line)) {
+    dev.kind = 'ボタン';                 // R1〜R9 は今は何もしない
+  } else if (line === 'READY') {
+    // ジョイスティックは接続時に再起動するので、起動したら今の状態を聞き直す
+    sendText(dev, '?');
+  } else if (line.startsWith('STATE:')) {
+    dev.kind = 'ジョイスティック';
+    const bits = line.slice(6);
+    JOY_ORDER.forEach((d, i) => (bits[i] === '1' ? press(d) : release(d)));
+  } else if (line.endsWith('_OFF') && JOY_NAMES[line.slice(0, -4)]) {
+    dev.kind = 'ジョイスティック';
+    release(JOY_NAMES[line.slice(0, -4)]);
+  } else if (JOY_NAMES[line]) {
+    dev.kind = 'ジョイスティック';
+    press(JOY_NAMES[line]);
+  } else {
+    return;
+  }
+  dev.showStatus();
+}
+
+// 接続ボタン1つぶんを用意する
+function makeSerialDevice(btnId, statusId, label) {
+  const btn = document.getElementById(btnId);
+  const status = document.getElementById(statusId);
+  const dev = { port: null, reader: null, kind: null };
+
+  dev.setStatus = (text, connected) => {
+    status.textContent = text;
+    btn.textContent = label + (connected ? ' 切断' : ' 接続');
+    btn.classList.toggle('connected', connected);
+  };
+  // 実際に届いた文字で、つながっているのが何かを表示する
+  dev.showStatus = () => dev.setStatus(dev.kind ? '接続中（' + dev.kind + '）' : '接続中', true);
+
+  dev.connect = async () => {
+    let port;
+    try {
+      port = await navigator.serial.requestPort();
+      if (devices.some(o => o !== dev && o.port === port)) {
+        dev.setStatus('そのポートはもう一方でつないでいます。別のポートを選んでください', false);
+        return;
+      }
+      await port.open({ baudRate: 9600 });
+    } catch (e) {
+      if (e.name === 'NotFoundError') {
+        // ポート選択の画面で何も選ばずに閉じた（一覧が空だった場合も含む）
+        dev.setStatus('ポートが選ばれませんでした。一覧に出ない場合はUSBの接続を確認してください', false);
+      } else if (e.name === 'InvalidStateError' || e.name === 'NetworkError') {
+        dev.setStatus('ポートを開けませんでした。ほかのソフト（シリアルモニタ等）が使っていないか確認してください', false);
+      } else {
+        dev.setStatus('接続できませんでした（' + e.message + '）', false);
+      }
+      return;
+    }
+    dev.port = port;
+    dev.kind = null;
+    dev.showStatus();
+    if (label === 'ジョイスティック') sendText(dev, '?');   // 今の倒し具合を聞く
+
+    const decoder = new TextDecoderStream();
+    const closed = port.readable.pipeTo(decoder.writable).catch(() => {});
+    dev.reader = decoder.readable.getReader();
+    let buf = '';
+    try {
+      while (true) {
+        const { value, done } = await dev.reader.read();
+        if (done) break;
+        buf += value;
+        const lines = buf.split(/[\r\n]+/);   // 改行が \n でも \r\n でも \r でも読める
+        buf = lines.pop();
+        lines.forEach(l => { if (l.trim()) handleSerialLine(dev, l.trim()); });
+      }
+    } catch (e) {
+      // USBケーブルが抜けたときなど
+    }
+    dev.reader.releaseLock();
+    dev.reader = null;
+    await closed;
+    try { await port.close(); } catch (e) {}
+    dev.port = null;
+    if (dev.kind === 'ジョイスティック' || label === 'ジョイスティック') {
+      JOY_ORDER.forEach(release);   // 倒したまま切れても歩き続けないように
+    }
+    dev.kind = null;
+    dev.setStatus('未接続', false);
+  };
+
+  dev.disconnect = async () => {
+    if (dev.reader) await dev.reader.cancel();   // 読み取りループが終わり、後片付けされる
+  };
+
+  if ('serial' in navigator) {
+    btn.addEventListener('click', () => {
+      btn.blur();                 // スペースキーでボタンが押されないように
+      return dev.port ? dev.disconnect() : dev.connect();
+    });
+  } else {
+    btn.disabled = true;
+    dev.setStatus('このブラウザは非対応です（Chrome か Edge で開いてください）', false);
+  }
+  return dev;
+}
+
+const devices = [
+  makeSerialDevice('joyBtn', 'joyStatus', 'ジョイスティック'),
+  makeSerialDevice('btnBtn', 'btnStatus', 'ボタン'),
+];
+
+function tryStartMove() {
+  const d = held[held.length - 1];
+  if (!d) return false;
+  hero.dir = d;                      // 通れなくても向きは変える
+  const [dx, dy] = DIRS[d];
+  if (isDoor(hero.tx + dx, hero.ty + dy) && !keyDone) { lockedHint(); return false; }
+  if (!isWalkable(hero.tx + dx, hero.ty + dy)) return false;   // 敵のいるマスにも入れる（触れるとやられる）
+  hero.fromX = hero.tx;
+  hero.fromY = hero.ty;
+  hero.tx += dx;
+  hero.ty += dy;
+  hero.moving = true;
+  hero.step++;
+  return true;
+}
+
+function updateHero(dt) {
+  if (!hero.moving) {
+    tryStartMove();
+    return;
+  }
+  hero.progress += WALK_SPEED * dt;
+  if (hero.progress >= 1) {
+    const extra = hero.progress - 1;
+    hero.progress = 0;
+    hero.moving = false;
+    if (isDoor(hero.tx, hero.ty)) { floorClear(); return; }   // 開いた扉に入った
+    // キーを押し続けていれば、止まらずに次のマスへ進む
+    if (tryStartMove()) hero.progress = extra;
+  }
+}
+
+// マス移動するもの（主人公・敵）の今の位置(px)
+function pixelPos(a) {
+  const t = a.moving ? a.progress : 1;
+  return {
+    x: (a.fromX + (a.tx - a.fromX) * t) * TILE,
+    y: (a.fromY + (a.ty - a.fromY) * t) * TILE,
+  };
+}
+const heroPixelPos = () => pixelPos(hero);
+
+// ━━━━━━━━━━━━━━━━ 効果音（Web Audio で合成） ━━━━━━━━━━━━━━━━
+let audio = null;
+function tone(freq, endFreq, dur, type = 'square', vol = 0.08, delay = 0) {
+  try {
+    audio = audio || new AudioContext();
+    const t0 = audio.currentTime + delay;
+    const osc = audio.createOscillator();
+    const gain = audio.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    osc.frequency.exponentialRampToValueAtTime(endFreq, t0 + dur);
+    gain.gain.setValueAtTime(vol, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    osc.connect(gain).connect(audio.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur);
+  } catch (e) { /* 音が出せない環境では鳴らさない */ }
+}
+const SE = {
+  shot: () => tone(900, 500, 0.06, 'square', 0.04),
+  hit:  (c = 1) => {                                // 当たるたびに音が上がる（数えている感じ）
+    const f = 330 * Math.pow(2, (c - 1) * 2 / 12);
+    tone(f, f * 0.8, 0.08, 'square', 0.06);
+  },
+  heal: () => tone(400, 900, 0.25, 'sine', 0.08),   // 元にもどった
+  pokan: () => {                       // 「ポ」→「カン」
+    tone(520, 480, 0.07, 'triangle', 0.15);
+    tone(1050, 1000, 0.18, 'triangle', 0.15, 0.08);
+  },
+  piece: () => tone(1320, 1580, 0.1, 'triangle', 0.1, 0.25),        // かけらがたまった
+  bounce: () => tone(300, 150, 0.2, 'sawtooth', 0.05, 0.25),        // 大きすぎてはじけた
+  locked: () => tone(160, 140, 0.12, 'square', 0.05),               // 扉が開かない
+  pickup: () => [1047, 1319, 1568, 2093].forEach((f, i) =>          // カギを拾った
+    tone(f, f, 0.1, 'square', 0.06, i * 0.07)),
+  key: () => [784, 988, 1175, 1568].forEach((f, i) =>               // カギができた
+    tone(f, f, 0.16, 'triangle', 0.12, 0.3 + i * 0.1)),
+  clear: () => [523, 659, 784, 1047, 784, 1047].forEach((f, i) =>   // 階クリア
+    tone(f, f, i === 5 ? 0.4 : 0.14, 'square', 0.06, i * 0.13)),
+  dead: () => {                                                      // やられた
+    tone(880, 660, 0.08, 'square', 0.08);                            // ビッ
+    for (let i = 0; i < 6; i++) {                                    // ぶるぶる（ゆれながら下がる）
+      const f = 520 - i * 50;
+      tone(f, f * 0.9, 0.09, 'square', 0.06, 0.1 + i * 0.1);
+    }
+    tone(140, 60, 0.25, 'triangle', 0.25, SHAKE_TIME + FALL_TIME);   // コテン（倒れた音）
+  },
+};
+
+// ━━━━━━━━━━━━━━━━ BGM（Web Audio で合成・8小節のループ） ━━━━━━━━━━━━━━━━
+// 音の高さは MIDI番号（60 = ド C4）。長さは8分音符の数。0 は休み
+const BGM_TEMPO = 132;                       // 1分間の4分音符の数
+const BGM_VOLUME = 0.6;                      // BGM全体の音量（効果音より小さめ）
+const BGM_MELODY = [
+  [76, 2], [79, 2], [81, 2], [79, 2],        // 1  ミ ソ ラ ソ
+  [76, 2], [74, 2], [72, 4],                 // 2  ミ レ ド―
+  [74, 2], [76, 2], [79, 2], [76, 2],        // 3  レ ミ ソ ミ
+  [74, 6], [0, 2],                           // 4  レ――
+  [76, 2], [79, 2], [81, 2], [84, 2],        // 5  ミ ソ ラ ド
+  [83, 2], [81, 2], [79, 4],                 // 6  シ ラ ソ―
+  [81, 2], [79, 2], [76, 2], [74, 2],        // 7  ラ ソ ミ レ
+  [72, 6], [0, 2],                           // 8  ド――
+];
+// ベースは小節ごとの和音の根音（1小節 = 8分音符8つ。「根音・5度」をくり返す）
+const BGM_BASS_ROOTS = [48, 45, 41, 43, 48, 40, [41, 43], 48];   // C Am F G C Em F→G C
+const BGM_STEPS = 64;                        // 8小節 × 8分音符8つ
+
+const bgm = {
+  on: true,            // ON/OFF（ボタンと M キーで切り替え）
+  started: false,
+  gain: null,
+  step: 0,             // 次に鳴らす8分音符の番号
+  nextTime: 0,         // その音を鳴らす時刻
+  timer: null,
+  melodyAt: {},        // 8分音符の番号 → [音, 長さ]
+  noise: null,
+};
+try { bgm.on = localStorage.getItem('dungeonBgm') !== 'off'; } catch (e) {}
+{
+  let s = 0;
+  for (const [n, len] of BGM_MELODY) { if (n) bgm.melodyAt[s] = [n, len]; s += len; }
+}
+const midiHz = n => 440 * Math.pow(2, (n - 69) / 12);
+
+function bgmNote(type, freq, t, dur, vol) {
+  const osc = audio.createOscillator();
+  const g = audio.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.setValueAtTime(vol, t + dur * 0.7);
+  g.gain.linearRampToValueAtTime(0, t + dur * 0.95);   // 音の終わりを少し切って歯切れよく
+  osc.connect(g).connect(bgm.gain);
+  osc.start(t);
+  osc.stop(t + dur);
+}
+function bgmDrum(t, kick) {
+  if (kick) {                                // バスドラム（低い音を急に下げる）
+    const osc = audio.createOscillator();
+    const g = audio.createGain();
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+    g.gain.setValueAtTime(0.25, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    osc.connect(g).connect(bgm.gain);
+    osc.start(t); osc.stop(t + 0.16);
+  }
+  // ハイハット（短いノイズ）
+  const src = audio.createBufferSource();
+  src.buffer = bgm.noise;
+  const hp = audio.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 7000;
+  const g = audio.createGain();
+  g.gain.setValueAtTime(kick ? 0.05 : 0.03, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+  src.connect(hp).connect(g).connect(bgm.gain);
+  src.start(t); src.stop(t + 0.05);
+}
+
+// 少し先（0.2秒ぶん）までの音を予約しておく（タイマーが遅れても音がずれない）
+function bgmSchedule() {
+  const stepDur = 60 / BGM_TEMPO / 2;
+  while (bgm.nextTime < audio.currentTime + 0.2) {
+    const s = bgm.step, t = bgm.nextTime;
+    // 階クリアのファンファーレ中はBGMを休む
+    if (mode === 'play') {
+      const m = bgm.melodyAt[s];
+      if (m) bgmNote('square', midiHz(m[0]), t, m[1] * stepDur, 0.045);
+      const bar = Math.floor(s / 8), inBar = s % 8;
+      let root = BGM_BASS_ROOTS[bar];
+      if (Array.isArray(root)) root = root[inBar < 4 ? 0 : 1];
+      bgmNote('triangle', midiHz(inBar % 2 ? root + 7 : root), t, stepDur, 0.11);
+      bgmDrum(t, inBar % 4 === 0);
+    }
+    bgm.step = (s + 1) % BGM_STEPS;
+    bgm.nextTime += stepDur;
+  }
+}
+
+function bgmStart() {
+  if (!bgm.on || bgm.timer) return;
+  try {
+    audio = audio || new AudioContext();
+    if (audio.state === 'suspended') audio.resume();
+    if (!bgm.gain) {
+      bgm.gain = audio.createGain();
+      bgm.gain.connect(audio.destination);
+      const len = Math.floor(audio.sampleRate * 0.05);
+      bgm.noise = audio.createBuffer(1, len, audio.sampleRate);
+      const d = bgm.noise.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    }
+    bgm.gain.gain.setValueAtTime(BGM_VOLUME, audio.currentTime);
+    bgm.step = 0;
+    bgm.nextTime = audio.currentTime + 0.1;
+    bgm.timer = setInterval(bgmSchedule, 50);
+    bgm.started = true;
+  } catch (e) { /* 音が出せない環境では鳴らさない */ }
+}
+function bgmStop() {
+  clearInterval(bgm.timer);
+  bgm.timer = null;
+  if (bgm.gain) bgm.gain.gain.setValueAtTime(0, audio.currentTime);   // 予約済みの音も消す
+}
+function bgmToggle() {
+  bgm.on = !bgm.on;
+  try { localStorage.setItem('dungeonBgm', bgm.on ? 'on' : 'off'); } catch (e) {}
+  if (bgm.on) bgmStart(); else bgmStop();
+  bgmBtn.textContent = bgm.on ? '♪ BGM オン' : '♪ BGM オフ';
+  bgmBtn.classList.toggle('connected', !bgm.on);
+}
+const bgmBtn = document.getElementById('bgmBtn');
+bgmBtn.textContent = bgm.on ? '♪ BGM オン' : '♪ BGM オフ';
+bgmBtn.classList.toggle('connected', !bgm.on);
+bgmBtn.addEventListener('click', () => { bgmBtn.blur(); bgmToggle(); });
+addEventListener('keydown', e => { if (e.key === 'm' || e.key === 'M') bgmToggle(); });
+// ブラウザは、人がキーやボタンを押すまで音を出させないので、最初の操作でBGMを始める
+['keydown', 'pointerdown'].forEach(ev => addEventListener(ev, () => bgmStart()));
+
+// ━━━━━━━━━━━━━━━━ 数字の敵のドット絵 ━━━━━━━━━━━━━━━━
+// o=体  w=白目  p=黒目  f=足。影(右端)と黒いふちどりは自動で付ける
+const ENEMY_SHAPES = {
+  1: [
+    '....ooooo...',
+    '...oooooo...',
+    '..ooooooo...',
+    '....wpowp...',
+    '....wpowp...',
+    '....ooooo...',
+    '....ooooo...',
+    '....ooooo...',
+    '....ooooo...',
+    '....ooooo...',
+    '..ooooooooo.',
+    '..ooooooooo.',
+    '...ff...ff..',
+  ],
+  2: [
+    '..oooooooo..',
+    '.oooooooooo.',
+    '.oowpoowpoo.',
+    '.oowpoowpoo.',
+    '.oo.....ooo.',
+    '........ooo.',
+    '.......ooo..',
+    '......ooo...',
+    '.....ooo....',
+    '....ooo.....',
+    '...ooo......',
+    '.oooooooooo.',
+    '.oooooooooo.',
+    '..ff....ff..',
+  ],
+  3: [
+    '.ooooooooo..',
+    '.oowpoowpoo.',
+    '.oowpoowpoo.',
+    '.......ooo..',
+    '.......ooo..',
+    '....ooooo...',
+    '....oooooo..',
+    '.......ooo..',
+    '.......ooo..',
+    '.ooo...ooo..',
+    '.ooooooooo..',
+    '..ooooooo...',
+    '..ff...ff...',
+  ],
+  4: [
+    '.ooo...ooo..',
+    '.ooo...ooo..',
+    '.ooo...ooo..',
+    '.ooo...ooo..',
+    '.oooooooooo.',
+    '.oowpoowpoo.',
+    '.oowpoowpoo.',
+    '.oooooooooo.',
+    '.......ooo..',
+    '.......ooo..',
+    '.......ooo..',
+    '.......ooo..',
+    '.......f.f..',
+  ],
+  5: [
+    '.oooooooooo.',
+    '.oooooooooo.',
+    '.ooo........',
+    '.ooo........',
+    '.ooooooooo..',
+    '.oowpoowpoo.',
+    '.oowpoowpoo.',
+    '........ooo.',
+    '........ooo.',
+    '.ooo....ooo.',
+    '.oooooooooo.',
+    '..oooooooo..',
+    '..ff....ff..',
+  ],
+  6: [
+    '...ooooooo..',
+    '..oooooooo..',
+    '.ooo........',
+    '.ooo........',
+    '.ooooooooo..',
+    '.oowpoowpoo.',
+    '.oowpoowpoo.',
+    '.ooo....ooo.',
+    '.ooo....ooo.',
+    '.oooooooooo.',
+    '..oooooooo..',
+    '..ff....ff..',
+  ],
+  7: [
+    '.oooooooooo.',
+    '.oowpoowpoo.',
+    '.oowpoowpoo.',
+    '.......ooo..',
+    '......ooo...',
+    '......ooo...',
+    '.....ooo....',
+    '.....ooo....',
+    '....ooo.....',
+    '....ooo.....',
+    '....ooo.....',
+    '....f.f.....',
+  ],
+  8: [
+    '..oooooooo..',
+    '.oooooooooo.',
+    '.ooo....ooo.',
+    '.ooo....ooo.',
+    '..oooooooo..',
+    '.oowpoowpoo.',
+    '.oowpoowpoo.',
+    '.ooo....ooo.',
+    '.ooo....ooo.',
+    '.oooooooooo.',
+    '..oooooooo..',
+    '..ff....ff..',
+  ],
+  9: [
+    '..oooooooo..',
+    '.oooooooooo.',
+    '.ooo....ooo.',
+    '.ooo....ooo.',
+    '.oooooooooo.',
+    '.oowpoowpoo.',
+    '.oowpoowpoo.',
+    '..ooooooooo.',
+    '........ooo.',
+    '.......ooo..',
+    '..ooooooo...',
+    '..ooooo.....',
+    '..ff..ff....',
+  ],
+};
+// 体の色（影と足の色は自動で暗くする）
+const ENEMY_BASE = {
+  1: '#e8504a', 2: '#f0a030', 3: '#e8d040', 4: '#58c048', 5: '#40c0d0',
+  6: '#4a78e8', 7: '#9a5ae0', 8: '#e868b8', 9: '#b08860',
+};
+function darken(hex, k) {
+  const v = parseInt(hex.slice(1), 16);
+  const c = s => Math.round(((v >> s) & 255) * k).toString(16).padStart(2, '0');
+  return '#' + c(16) + c(8) + c(0);
+}
+const ENEMY_COLORS = {};
+for (const n in ENEMY_BASE) {
+  const o = ENEMY_BASE[n];
+  ENEMY_COLORS[n] = { o, O: darken(o, 0.72), f: darken(o, 0.5) };
+}
+function makeEnemySprite(n, flash) {
+  const grid = Array.from({ length: 16 }, () => Array(16).fill('.'));
+  const shape = ENEMY_SHAPES[n];
+  const top = 15 - shape.length;          // 足が下にそろうように置く
+  shape.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) if (row[x] !== '.') grid[y + top][x + 2] = row[x];
+  });
+  const body = (x, y) => grid[y] && grid[y][x] && grid[y][x] !== '.' && grid[y][x] !== 'k';
+  // 右端に影を付ける
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    if (grid[y][x] === 'o' && !body(x + 1, y)) grid[y][x] = 'O';
+  }
+  // 体のまわりを黒でふちどる
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    if (grid[y][x] === '.' && (body(x - 1, y) || body(x + 1, y) || body(x, y - 1) || body(x, y + 1))) {
+      grid[y][x] = 'k';
+    }
+  }
+  const pal = Object.assign({ k: '#2b1d2a', w: '#ffffff', p: '#2b1d2a' }, ENEMY_COLORS[n]);
+  const c = document.createElement('canvas');
+  c.width = c.height = TILE;
+  const g = c.getContext('2d');
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const ch = grid[y][x];
+    if (ch === '.') continue;
+    g.fillStyle = flash && ch !== 'k' ? '#ffffff' : pal[ch];   // 当たった瞬間は白く光る
+    g.fillRect(x, y, 1, 1);
+  }
+  return c;
+}
+const ENEMY_SPRITES = {};
+for (let n = 1; n <= 9; n++) ENEMY_SPRITES[n] = { normal: makeEnemySprite(n, false), flash: makeEnemySprite(n, true) };
+
+// ━━━━━━━━━━━━━━━━ 敵 ━━━━━━━━━━━━━━━━
+// 数字の分だけ玉を当てると倒せる（1は1発、2は2発）。倒すと数字の分だけ経験値
+const ENEMY_SPEED = 2;          // 1秒に進むマス数
+const RESPAWN_TIME = 5;         // 倒してから次が出てくるまでの秒数
+const enemies = [];
+const respawns = [];            // { n, t } 出現待ち
+let exp = 0;
+
+function enemyAt(x, y, except = null) {
+  return enemies.find(e => e !== except &&
+    ((e.tx === x && e.ty === y) || (e.moving && e.fromX === x && e.fromY === y)));
+}
+const heroOn = (x, y) => (hero.tx === x && hero.ty === y) || (hero.moving && hero.fromX === x && hero.fromY === y);
+// 敵どうしは重ならないが、主人公のいるマスには入ってくる（触れるとやられる）
+const canEnemyEnter = (x, y, self) => isWalkable(x, y) && !isDoor(x, y) && !enemyAt(x, y, self);
+
+function spawnEnemy(n, x, y) {
+  // 場所の指定が無い・ふさがっている場合は、主人公から離れた空きマスを探す
+  // （スタートから歩いて行けるマスだけから選ぶ。行けない場所にいると倒せないため）
+  if (x === undefined || !canEnemyEnter(x, y, null) || heroOn(x, y)) {
+    const ok = ([cx, cy]) => canEnemyEnter(cx, cy, null) && !heroOn(cx, cy);
+    let cands = reachable.filter(c => ok(c) && Math.abs(c[0] - hero.tx) + Math.abs(c[1] - hero.ty) > CHASE_RANGE);
+    if (!cands.length) cands = reachable.filter(ok);   // 狭くて離れた場所が無いとき
+    if (!cands.length) return;
+    [x, y] = cands[Math.floor(Math.random() * cands.length)];
+  }
+  enemies.push({
+    n, hp: n, tx: x, ty: y, fromX: x, fromY: y, progress: 0, moving: false,
+    wait: 0.5 + Math.random() * 1.5, flash: 0, bob: Math.random() * 10, combo: 0,
+    chasing: false, alert: 0,
+  });
+}
+
+const CHASE_RANGE = 5;          // 主人公がこのマス数以内に来ると追いかけてくる（玉の届く距離と同じ）
+const CHASE_SPEED = 2.5;        // 追いかけるときの速さ（1秒に進むマス数）
+const CHASE_PAUSE = 0.15;       // 追いかけるときの、1マスごとの間(秒)
+
+function updateEnemies(dt) {
+  for (const e of enemies) {
+    e.bob += dt;
+    if (e.flash > 0) e.flash -= dt;
+    // 続けて当てないと元にもどる
+    if (e.hp < e.n) {
+      e.combo -= dt;
+      if (e.combo <= 0) {
+        e.hp = e.n;
+        const ep = pixelPos(e);
+        effects.push(floatText(ep.x + 8, ep.y - 10, 'もどった!', '#a8ffb0'));
+        SE.heal();
+      }
+    }
+    // 主人公が CHASE_RANGE マス以内に入ったら気づいて追いかける（むてき中は追わない）
+    const near = invincible <= 0 &&
+      Math.abs(e.tx - hero.tx) + Math.abs(e.ty - hero.ty) <= CHASE_RANGE;
+    if (near && !e.chasing) {
+      e.alert = 0.6;                                  // 頭の上に「!」を出す
+      e.wait = Math.min(e.wait, 0.3);                 // 気づいたら、すぐ動き出す
+    }
+    e.chasing = near;
+    if (e.alert > 0) e.alert -= dt;
+    if (e.moving) {
+      e.progress += (e.chasing ? CHASE_SPEED : ENEMY_SPEED) * dt;
+      if (e.progress >= 1) { e.progress = 0; e.moving = false; }
+      continue;
+    }
+    e.wait -= dt;
+    if (e.wait > 0) continue;
+    let step = null;
+    if (e.chasing) {
+      // 主人公に近づく方向へ1マス（遠い方の向きを先に試し、ふさがっていればもう一方）
+      e.wait = CHASE_PAUSE;
+      const ddx = Math.sign(hero.tx - e.tx), ddy = Math.sign(hero.ty - e.ty);
+      const tries = Math.abs(hero.tx - e.tx) >= Math.abs(hero.ty - e.ty)
+        ? [[ddx, 0], [0, ddy]] : [[0, ddy], [ddx, 0]];
+      step = tries.find(([dx, dy]) => (dx || dy) && canEnemyEnter(e.tx + dx, e.ty + dy, e));
+    } else {
+      // ときどき上下左右のどれかに1マス歩く（4回に1回はその場で休む）
+      e.wait = 0.8 + Math.random() * 1.4;
+      if (Math.random() < 0.25) continue;
+      step = Object.values(DIRS)[Math.floor(Math.random() * 4)];
+      if (!canEnemyEnter(e.tx + step[0], e.ty + step[1], e)) step = null;
+    }
+    if (step) {
+      e.fromX = e.tx; e.fromY = e.ty;
+      e.tx += step[0]; e.ty += step[1];
+      e.moving = true;
+    }
+  }
+  for (let i = respawns.length - 1; i >= 0; i--) {
+    respawns[i].t -= dt;
+    if (respawns[i].t <= 0) spawnEnemy(respawns.splice(i, 1)[0].n);
+  }
+  ensureNeeded();
+}
+
+// ━━━━━━━━━━━━━━━━ 階（面）とカギ ━━━━━━━━━━━━━━━━
+// 扉に書かれた数と「ぴったり」になるように数字の敵を倒して、カギのかけらを集める。
+// target: 扉の数（この中からランダム）  pool: 出てくる敵の数字
+const FLOORS = [
+  { target: [3],                  pool: [1, 2] },
+  { target: [4, 5],               pool: [1, 2, 3, 4] },
+  { target: [6, 7],               pool: [1, 2, 3, 4, 5] },
+  { target: [8, 9],               pool: [1, 2, 3, 4, 5, 6, 7] },
+  { target: [10],                 pool: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
+  { target: [10],                 pool: [3, 4, 5, 6, 7, 8, 9] },
+  { target: [11, 12, 13],         pool: [2, 3, 4, 5, 6, 7, 8, 9] },   // 10をまたぐ
+  { target: [14, 15, 16, 17, 18], pool: [4, 5, 6, 7, 8, 9] },
+];
+// 1つの階に出る敵の数（マップが広いほど多い）。1階 = 5体、8階 = 11体くらい
+const enemyCount = () => 4 + Math.round(MAP_W * MAP_H / 300);
+const NEEDED_TIME = 1.5;        // 「あと○」の敵がいないとき、出てくるまでの秒数
+
+let floor = 1;
+let target = 0;                 // 扉の数
+let pieces = [];                // 集めたかけら（倒した数字）
+let keyDone = false;            // カギを拾ったか（扉が開く）
+let keyItem = null;             // かけらがそろって、地面に出ているカギ { x, y }
+let door = null;                // { x, y }
+let mode = 'play';              // 'play' | 'clear'（扉に入った後）
+let clearTimer = 0;
+let lockedCool = 0;
+
+const floorDef = () => FLOORS[Math.min(floor, FLOORS.length) - 1];
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+const piecesSum = () => pieces.reduce((a, b) => a + b, 0);
+const remain = () => target - piecesSum();
+function isDoor(x, y) { return door !== null && door.x === x && door.y === y; }
+
+function startFloor(f) {
+  floor = f;
+  target = pick(floorDef().target);
+  pieces = [];
+  keyDone = false;
+  keyItem = null;
+  mode = 'play';
+  door = null;
+  generateMap(f);                 // この階のマップを作る（階が上がるほど広い）
+  door = chooseDoor();
+  Object.assign(hero, { tx: START_X, ty: START_Y, fromX: START_X, fromY: START_Y, progress: 0, moving: false, dir: 'down' });
+  invincible = 0;
+  enemies.length = 0;
+  respawns.length = 0;
+  bullets.length = 0;
+  effects.length = 0;
+  const count = enemyCount();
+  for (let i = 0; i < count; i++) spawnEnemy(pick(floorDef().pool));
+  ensureNeeded(true);
+  document.getElementById('floorNo').textContent = floor;
+  effects.push(banner(floor + 'かい（' + MAP_W + '×' + MAP_H + 'マス）', 'とびらの数 ' + target + ' ぴったりに　あつめよう', 2.6));
+}
+
+// 「あと○」の数字の敵がいなければ出す（いないと先に進めなくなるので）
+function ensureNeeded(now = false) {
+  const r = remain();
+  // その階に出る数字より大きいときは出さない（組み合わせて作ってもらう）
+  if (mode !== 'play' || keyDone || keyItem || r < 1 || r > Math.max(...floorDef().pool)) return;
+  if (enemies.some(e => e.n === r) || respawns.some(s => s.n === r)) return;
+  if (now) spawnEnemy(r);
+  else respawns.push({ n: r, t: NEEDED_TIME });
+}
+
+// 敵を倒したときに、その数字をかけらにする
+function collectPiece(n, x, y) {
+  if (mode !== 'play' || keyDone || keyItem) return;
+  const r = remain();
+  if (n > r) {
+    // 大きすぎ：かけらははじけて戻る（罰はなし）
+    effects.push(floatText(x, y - 26, 'おおきすぎ!  あと ' + r, '#ff9a8a'));
+    SE.bounce();
+    return;
+  }
+  pieces.push(n);
+  if (n === r) {
+    // カギは、この階で最初に登場した場所（スタート地点）にあらわれる
+    keyItem = { x: START_X, y: START_Y };
+    effects.push(floatText(x, y - 26, 'カギができた!', '#ffe14a'));
+    effects.push(banner('カギができた!', 'さいしょの場所に カギが出たよ　とりにいこう', 2.4));
+    SE.key();
+  } else {
+    effects.push(floatText(x, y - 26, 'あと ' + (r - n), '#9ff0ff'));
+    SE.piece();
+  }
+}
+
+function lockedHint() {
+  if (lockedCool > 0) return;
+  lockedCool = 1.2;
+  const p = heroPixelPos();
+  const msg = keyItem ? 'カギを とってきて!' : 'カギがない!  あと ' + remain();
+  effects.push(floatText(p.x + 8, p.y - 6, msg, '#ffffff'));
+  SE.locked();
+}
+
+// 出てきたカギの上に主人公が来たら拾う → 扉が開く
+function checkKeyPickup() {
+  if (!keyItem) return;
+  const p = heroPixelPos();
+  if (Math.abs(p.x - keyItem.x * TILE) < 8 && Math.abs(p.y - keyItem.y * TILE) < 8) {
+    keyItem = null;
+    keyDone = true;
+    effects.push(floatText(p.x + 8, p.y - 6, 'カギをとった!', '#ffe14a'));
+    effects.push(banner('カギをとった!', 'とびらへ いこう', 2));
+    SE.pickup();
+  }
+}
+
+// 地面に落ちているカギ（ふわふわ上下して、きらっと光る）
+function drawKeyItem(camX, camY) {
+  if (!keyItem) return;
+  const t = performance.now() / 1000;
+  const kx = keyItem.x * TILE - camX, ky = keyItem.y * TILE - camY;
+  // かげ
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(kx + 4, ky + 13, 8, 2);
+  ctx.globalAlpha = 1;
+  drawTile(T.key, kx, ky - 2 - Math.round(Math.sin(t * 4) * 2));
+  // きらっ
+  if (Math.floor(t * 3) % 3 === 0) {
+    const sx = kx + 12, sy = ky - 1;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(sx, sy - 2, 1, 5);
+    ctx.fillRect(sx - 2, sy, 5, 1);
+  }
+}
+
+function floorClear() {
+  mode = 'clear';
+  clearTimer = 2.8;
+  bullets.length = 0;
+  effects.push(banner(floor + 'かい クリア!', pieces.join(' + ') + ' = ' + target, 2.8));
+  SE.clear();
+}
+
+function updateFloor(dt) {
+  if (lockedCool > 0) lockedCool -= dt;
+  if (mode === 'clear') {
+    clearTimer -= dt;
+    if (clearTimer <= 0) startFloor(floor + 1);
+  }
+}
+
+// スタートの階を選ぶ（先生が子どもに合わせて選ぶ）
+const floorSel = document.getElementById('floorSel');
+FLOORS.forEach((f, i) => {
+  const opt = document.createElement('option');
+  opt.value = i + 1;
+  opt.textContent = (i + 1) + 'かい（とびら ' + f.target[0] + (f.target.length > 1 ? '〜' + f.target[f.target.length - 1] : '') + '）';
+  floorSel.appendChild(opt);
+});
+floorSel.addEventListener('change', () => {
+  startFloor(Number(floorSel.value));
+  floorSel.blur();               // 矢印キーが選択の切り替えに使われないように
+});
+
+// ━━━━━━━━━━━━━━━━ 玉 ━━━━━━━━━━━━━━━━
+const BULLET_SPEED = 160;       // px/秒（1秒に10マス）
+// ボタンを押した回数だけ玉が出る。とても速く押しても玉が重ならないよう、
+// 押した分を順番待ちにして、最低 FIRE_GAP 秒あけて1発ずつ出す
+const FIRE_GAP = 0.07;
+const FIRE_QUEUE_MAX = 9;       // 順番待ちできる最大数
+const bullets = [];
+let fireCool = 0;
+let fireQueue = 0;
+
+function fire() {
+  if (mode !== 'play') return;
+  if (fireQueue < FIRE_QUEUE_MAX) fireQueue++;
+}
+
+function shootOne() {
+  fireCool = FIRE_GAP;
+  const p = heroPixelPos();
+  const [dx, dy] = DIRS[hero.dir];
+  // dist は主人公の中心から進んだ距離(px)。shotRange マス進んだら消える
+  bullets.push({
+    x: p.x + 8 + dx * 6, y: p.y + 9 + dy * 6, vx: dx * BULLET_SPEED, vy: dy * BULLET_SPEED,
+    dist: 6, maxDist: hero.shotRange * TILE,
+  });
+  SE.shot();
+}
+
+function updateBullets(dt) {
+  if (fireCool > 0) fireCool -= dt;
+  if (mode !== 'play') fireQueue = 0;
+  if (fireQueue > 0 && fireCool <= 0) { fireQueue--; shootOne(); }
+  for (const b of bullets) {
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.dist += BULLET_SPEED * dt;
+    // 届く距離を超えたら、ふっと消える
+    if (b.dist >= b.maxDist) { b.dead = true; effects.push(spark(b.x, b.y)); continue; }
+    const tx = Math.floor(b.x / TILE), ty = Math.floor(b.y / TILE);
+    // 木や建物、マップの外に当たったら消える
+    if (!isWalkable(tx, ty)) { b.dead = true; effects.push(spark(b.x, b.y)); continue; }
+    // 敵に当たったか（敵の絵の範囲で判定）
+    for (const e of enemies) {
+      const ep = pixelPos(e);
+      if (b.x >= ep.x + 2 && b.x <= ep.x + 14 && b.y >= ep.y + 1 && b.y <= ep.y + 15) {
+        b.dead = true;
+        hitEnemy(e);
+        break;
+      }
+    }
+  }
+  for (let i = bullets.length - 1; i >= 0; i--) if (bullets[i].dead) bullets.splice(i, 1);
+}
+
+// 敵の数だけ「続けて」当てると倒せる。
+// 1発目からタイマーが始まり、次の玉が COMBO_TIME 秒以内に当たらないと元にもどる
+const COMBO_TIME = 1.0;
+
+function hitEnemy(e) {
+  e.hp--;
+  e.flash = 0.12;
+  e.combo = COMBO_TIME;
+  const ep = pixelPos(e);
+  const count = e.n - e.hp;                          // 何発目か（1, 2, 3 …）
+  if (e.hp > 0) {
+    effects.push(countText(ep.x + 8, ep.y - 2, count));
+    SE.hit(count);
+    return;
+  }
+  // ポカン！と消える
+  enemies.splice(enemies.indexOf(e), 1);
+  effects.push(pokan(ep.x + 8, ep.y + 8, e.n));
+  respawns.push({ n: e.n, t: RESPAWN_TIME });
+  SE.pokan();
+  collectPiece(e.n, ep.x + 8, ep.y + 8);
+  exp += e.n;
+  const hud = document.getElementById('hud');
+  document.getElementById('exp').textContent = exp;
+  hud.classList.remove('up'); void hud.offsetWidth; hud.classList.add('up');
+}
+
+// ━━━━━━━━━━━━━━━━ エフェクト ━━━━━━━━━━━━━━━━
+const effects = [];
+function spark(x, y) {        // 玉が壁に当たったときの小さな火花
+  return { t: 0, life: 0.15, draw(cx, cy) {
+    ctx.fillStyle = '#fff6b0';
+    const r = 1 + this.t * 12;
+    ctx.fillRect(Math.round(x - cx - r), Math.round(y - cy), 1, 1);
+    ctx.fillRect(Math.round(x - cx + r), Math.round(y - cy), 1, 1);
+    ctx.fillRect(Math.round(x - cx), Math.round(y - cy - r), 1, 1);
+    ctx.fillRect(Math.round(x - cx), Math.round(y - cy + r), 1, 1);
+  } };
+}
+function pokan(x, y, n) {     // 敵が消えるときの「ポカン！」
+  const parts = Array.from({ length: 10 }, (_, i) => {
+    const a = (i / 10) * Math.PI * 2;
+    return { vx: Math.cos(a) * 60, vy: Math.sin(a) * 60 };
+  });
+  return { t: 0, life: 0.9, draw(cx, cy) {
+    const t = this.t;
+    // 白いけむりの輪
+    if (t < 0.3) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x - cx, y - cy, 3 + t * 40, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // 飛び散るかけら
+    if (t < 0.4) {
+      ctx.fillStyle = ENEMY_COLORS[n].o;
+      for (const p of parts) {
+        ctx.fillRect(Math.round(x - cx + p.vx * t), Math.round(y - cy + p.vy * t), 2, 2);
+      }
+    }
+    // 文字が浮かび上がる
+    ctx.globalAlpha = Math.min(1, (this.life - t) * 3);
+    const ty = Math.round(y - cy - 10 - t * 16);
+    outlineText('ポカン!', Math.round(x - cx), ty, '#ffffff', 10);
+    outlineText('+' + n + ' EXP', Math.round(x - cx), ty + 11, '#ffd84a', 8);
+    ctx.globalAlpha = 1;
+  } };
+}
+function outlineText(text, x, y, color, size) {
+  ctx.font = `bold ${size}px "Meiryo", sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#2b1d2a';
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+function floatText(x, y, text, color) {   // ふわっと浮かんで消える文字
+  return { t: 0, life: 1.4, draw(cx, cy) {
+    ctx.globalAlpha = Math.min(1, (this.life - this.t) * 3);
+    outlineText(text, Math.round(x - cx), Math.round(y - cy - this.t * 10), color, 9);
+    ctx.globalAlpha = 1;
+  } };
+}
+function countText(x, y, n) {             // 当てた数「1」「2」「3」…
+  return { t: 0, life: 0.5, draw(cx, cy) {
+    const s = this.t < 0.08 ? 14 : 11;     // 出た瞬間だけ大きく
+    ctx.globalAlpha = Math.min(1, (this.life - this.t) * 4);
+    outlineText(String(n), Math.round(x - cx + 10), Math.round(y - cy - this.t * 14), '#ffe14a', s);
+    ctx.globalAlpha = 1;
+  } };
+}
+function banner(title, sub, life) {        // 画面のまん中に出る大きな文字
+  return { t: 0, life, screen: true, draw() {
+    const a = Math.min(1, this.t * 5, (this.life - this.t) * 3);
+    ctx.globalAlpha = a * 0.75;
+    ctx.fillStyle = '#1b1b24';
+    ctx.fillRect(0, 84, canvas.width, 50);
+    ctx.globalAlpha = a;
+    outlineText(title, canvas.width / 2, 100, '#ffe14a', 16);
+    outlineText(sub, canvas.width / 2, 121, '#ffffff', 10);
+    ctx.globalAlpha = 1;
+  } };
+}
+function updateEffects(dt) {
+  for (const f of effects) f.t += dt;
+  for (let i = effects.length - 1; i >= 0; i--) if (effects[i].t >= effects[i].life) effects.splice(i, 1);
+}
+
+// ━━━━━━━━━━━━━━━━ 敵に触れるとやられる ━━━━━━━━━━━━━━━━
+// ぶるぶる → コテンと倒れる → 集めたかけら・持ち玉が 0 になって、スタート地点から再開
+const SHAKE_TIME = 0.7;         // ぶるぶるふるえる時間
+const FALL_TIME = 0.2;          // 倒れるまでの時間
+const DEAD_TIME = 2.4;          // やられてから再開までの時間（合計）
+const INVINCIBLE_TIME = 2.0;    // 再開してから敵に触れても平気な時間
+const TOUCH_DIST = 11;          // 主人公と敵の距離(px)がこれより近いと「触れた」
+let deadT = 0;
+let invincible = 0;
+
+function checkTouch() {
+  if (invincible > 0 || mode !== 'play') return;   // 扉に入った瞬間などは対象外
+  const p = heroPixelPos();
+  for (const e of enemies) {
+    const ep = pixelPos(e);
+    if (Math.abs(ep.x - p.x) < TOUCH_DIST && Math.abs(ep.y - p.y) < TOUCH_DIST) { heroDie(); return; }
+  }
+}
+
+function heroDie() {
+  mode = 'dead';
+  deadT = 0;
+  fireQueue = 0;                // 持ち玉（撃つ予定の玉）も、飛んでいる玉も消える
+  bullets.length = 0;
+  SE.dead();
+}
+
+function revive() {
+  // 集めたかけらは 0 にもどる（カギができていても、なくなる）
+  const lost = piecesSum();
+  pieces = [];
+  keyDone = false;
+  keyItem = null;               // 落ちていたカギも消える
+  // 敵の「当てた数」も元にもどす
+  for (const e of enemies) { e.hp = e.n; e.combo = 0; }
+  Object.assign(hero, { tx: START_X, ty: START_Y, fromX: START_X, fromY: START_Y, progress: 0, moving: false, dir: 'down' });
+  mode = 'play';
+  invincible = INVINCIBLE_TIME;
+  effects.push(banner('やられた…', lost ? 'かけらが 0 に もどった　あと ' + remain() : 'スタートから やりなおし', 2));
+}
+
+function updateDead(dt) {
+  deadT += dt;
+  if (deadT >= DEAD_TIME) revive();
+}
+
+// やられたときの主人公の絵
+function drawDeadHero(ax, ay) {
+  const spr = SPRITES.down[0];
+  if (deadT < SHAKE_TIME) {
+    // ぶるぶる：左右にふるえながら、白く点滅
+    const dx = Math.floor(deadT * 30) % 2 ? 1 : -1;
+    ctx.drawImage(Math.floor(deadT * 12) % 2 ? HERO_WHITE : spr, ax + dx, ay);
+    return;
+  }
+  // コテン：足元を中心に横に倒れる
+  const k = Math.min(1, (deadT - SHAKE_TIME) / FALL_TIME);
+  ctx.save();
+  ctx.translate(ax + 8, ay + 16);
+  ctx.rotate(-Math.PI / 2 * k * k);
+  ctx.drawImage(spr, -8, -16);
+  ctx.restore();
+  if (k >= 1) {
+    // 頭のまわりをくるくる回る星
+    const t = deadT - SHAKE_TIME - FALL_TIME;
+    for (let i = 0; i < 3; i++) {
+      const a = t * 5 + i * Math.PI * 2 / 3;
+      const sx = Math.round(ax - 6 + Math.cos(a) * 7), sy = Math.round(ay + 8 + Math.sin(a) * 3 - 6);
+      ctx.fillStyle = '#2b1d2a';
+      ctx.fillRect(sx - 1, sy - 1, 3, 3);
+      ctx.fillStyle = '#ffe14a';
+      ctx.fillRect(sx, sy, 1, 1);
+    }
+    if (t < 0.9) outlineText('コテン', ax + 8, ay - 4 - Math.round(t * 6), '#ffffff', 9);
+  }
+}
+
+function update(dt) {
+  if (mode === 'play') {
+    if (invincible > 0) invincible -= dt;
+    updateHero(dt);
+    updateEnemies(dt);
+    checkKeyPickup();
+    checkTouch();
+  } else if (mode === 'dead') {
+    updateDead(dt);
+  }
+  updateBullets(dt);
+  updateEffects(dt);
+  updateFloor(dt);
+}
+
+// ━━━━━━━━━━━━━━━━ 描画 ━━━━━━━━━━━━━━━━
+const sheet = new Image();
+sheet.src = 'tiles.png';
+
+function drawTile(n, px, py) {
+  const sx = (n % SHEET_COLS) * TILE;
+  const sy = Math.floor(n / SHEET_COLS) * TILE;
+  ctx.drawImage(sheet, sx, sy, TILE, TILE, px, py, TILE, TILE);
+}
+
+function draw() {
+  const p = heroPixelPos();
+  // カメラは主人公を中心に、マップの外が映らない範囲で動く
+  const camX = Math.round(Math.max(0, Math.min(MAP_W * TILE - canvas.width, p.x + TILE / 2 - canvas.width / 2)));
+  const camY = Math.round(Math.max(0, Math.min(MAP_H * TILE - canvas.height, p.y + TILE / 2 - canvas.height / 2)));
+
+  const x0 = Math.floor(camX / TILE), y0 = Math.floor(camY / TILE);
+  for (let y = y0; y <= y0 + VIEW_H && y < MAP_H; y++) {
+    for (let x = x0; x <= x0 + VIEW_W && x < MAP_W; x++) {
+      const px = x * TILE - camX, py = y * TILE - camY;
+      drawTile(ground[y][x], px, py);
+      if (obj[y][x] !== null) drawTile(obj[y][x], px, py);
+    }
+  }
+
+  drawDoor(camX, camY);
+  drawKeyItem(camX, camY);
+
+  // 主人公と敵を、下にいるものほど手前になるよう y の順に描く
+  const actors = enemies.map(e => ({ e, pos: pixelPos(e) }));
+  if (mode === 'play' || mode === 'dead') actors.push({ hero: true, pos: p });   // 扉に入ったら主人公は消える
+  actors.sort((a, b) => a.pos.y - b.pos.y);
+  for (const a of actors) {
+    const ax = Math.round(a.pos.x - camX), ay = Math.round(a.pos.y - camY);
+    if (a.hero) {
+      if (mode === 'dead') { drawDeadHero(ax, ay); continue; }
+      // 生き返った直後の「むてき」の間は点滅する
+      if (invincible > 0 && Math.floor(invincible * 10) % 2) continue;
+      // 歩いている間は 1→0→2→0 の順に足を動かす
+      let frame = 0;
+      if (hero.moving) frame = hero.progress < 0.5 ? (hero.step % 2 ? 1 : 2) : 0;
+      ctx.drawImage(SPRITES[hero.dir][frame], ax, ay);
+    } else {
+      const e = a.e;
+      const bobY = Math.floor(e.bob * 3) % 2;           // ぴょこぴょこ上下に動く
+      const spr = ENEMY_SPRITES[e.n][e.flash > 0 ? 'flash' : 'normal'];
+      ctx.drawImage(spr, ax, ay - bobY);
+      // 残りの当たり数を、頭の上に小さな四角で表示
+      const top = ay + 15 - ENEMY_SHAPES[e.n].length - bobY;   // 絵の上はし
+      // 数の分の四角。当てた分は黄色になる（数えながら当てる）
+      const bw = e.n * 3 + 1;
+      const bx0 = ax + 8 - Math.round(bw / 2);
+      const hits = e.n - e.hp;
+      ctx.fillStyle = '#2b1d2a';
+      ctx.fillRect(bx0, top - 6, bw, 4);
+      for (let i = 0; i < e.n; i++) {
+        ctx.fillStyle = i < hits ? '#ffe14a' : '#ffffff';
+        ctx.fillRect(bx0 + 1 + i * 3, top - 5, 2, 2);
+      }
+      // 次の玉までの残り時間（へっていく線）
+      if (hits > 0) {
+        const w = Math.max(0, Math.round((bw - 2) * e.combo / COMBO_TIME));
+        ctx.fillStyle = '#2b1d2a';
+        ctx.fillRect(bx0, top - 2, bw, 3);
+        ctx.fillStyle = e.combo < 0.35 ? '#ff6a5a' : '#7cf08a';
+        ctx.fillRect(bx0 + 1, top - 1, w, 1);
+      }
+      // 主人公に気づいた瞬間の「!」
+      if (e.alert > 0) outlineText('!', ax + 8, top - 13, '#ff5a4a', 12);
+    }
+  }
+
+  // 玉
+  for (const b of bullets) {
+    const bx = Math.round(b.x - camX), by = Math.round(b.y - camY);
+    ctx.fillStyle = '#2b1d2a';
+    ctx.fillRect(bx - 2, by - 2, 5, 5);
+    ctx.fillStyle = '#ffe14a';
+    ctx.fillRect(bx - 1, by - 1, 3, 3);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(bx - 1, by - 1, 1, 1);
+  }
+
+  for (const f of effects) if (!f.screen) f.draw(camX, camY);
+  drawDoorArrow(camX, camY);
+  drawKeyPanel();
+  for (const f of effects) if (f.screen) f.draw();
+}
+
+// 扉（カギがないあいだは錠前つき。上に扉の数を出す）
+function drawDoor(camX, camY) {
+  if (!door) return;
+  const dx = door.x * TILE - camX, dy = door.y * TILE - camY;
+  drawTile(T.door, dx, dy);
+  if (!keyDone) {
+    // 錠前
+    ctx.fillStyle = '#2b1d2a';
+    ctx.fillRect(dx + 4, dy + 6, 8, 8);
+    ctx.fillRect(dx + 5, dy + 2, 6, 5);
+    ctx.fillStyle = '#e0b040';
+    ctx.fillRect(dx + 5, dy + 7, 6, 6);
+    ctx.fillStyle = '#2b1d2a';
+    ctx.fillRect(dx + 7, dy + 9, 2, 3);
+    ctx.fillStyle = '#c8c8d0';
+    ctx.fillRect(dx + 6, dy + 3, 4, 1);
+    ctx.fillRect(dx + 6, dy + 3, 1, 4);
+    ctx.fillRect(dx + 9, dy + 3, 1, 4);
+  } else {
+    // 開いた扉はきらきら光る
+    const t = performance.now() / 1000;
+    ctx.globalAlpha = 0.35 + 0.25 * Math.sin(t * 6);
+    ctx.fillStyle = '#fff6b0';
+    ctx.fillRect(dx + 2, dy + 2, 12, 13);
+    ctx.globalAlpha = 1;
+  }
+  // 扉の数の札
+  const label = String(target);
+  const w = label.length * 6 + 6;
+  ctx.fillStyle = '#2b1d2a';
+  ctx.fillRect(dx + 8 - w / 2 - 1, dy - 12, w + 2, 11);
+  ctx.fillStyle = keyDone ? '#ffe14a' : '#ffffff';
+  ctx.fillRect(dx + 8 - w / 2, dy - 11, w, 9);
+  ctx.font = 'bold 9px "Meiryo", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2b1d2a';
+  ctx.fillText(label, dx + 8, dy - 6);
+}
+
+// 次に行く場所（出てきたカギ → 拾ったら扉）が画面の外なら、画面のはしに矢印を出す
+function drawDoorArrow(camX, camY) {
+  if (mode !== 'play') return;
+  const goal = keyItem ? keyItem : keyDone ? door : null;
+  if (!goal) return;
+  const cx = goal.x * TILE + 8 - camX, cy = goal.y * TILE + 8 - camY;
+  if (cx >= 0 && cx < canvas.width && cy >= 0 && cy < canvas.height) return;
+  const W = canvas.width, H = canvas.height;
+  const ang = Math.atan2(cy - H / 2, cx - W / 2);
+  const ax = Math.max(12, Math.min(W - 12, cx)), ay = Math.max(56, Math.min(H - 12, cy));
+  const pulse = 1 + 0.2 * Math.sin(performance.now() / 120);
+  ctx.save();
+  ctx.translate(ax, ay);
+  ctx.rotate(ang);
+  ctx.scale(pulse, pulse);
+  ctx.beginPath();
+  ctx.moveTo(8, 0); ctx.lineTo(-5, -6); ctx.lineTo(-5, 6); ctx.closePath();
+  ctx.fillStyle = '#ffe14a';
+  ctx.strokeStyle = '#2b1d2a';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fill();
+  ctx.restore();
+}
+
+// 左上のカギパネル：扉の数・10のまとまりの枠・集めたかけら・あといくつ
+function drawKeyPanel() {
+  const frames = Math.max(1, Math.ceil(target / 10));
+  const CELL = 7;
+  const frameW = 5 * CELL + 1;
+  const sum = piecesSum();
+  const eq = pieces.length > 1 ? pieces.join('+') + '=' + sum : pieces.join('');
+  ctx.font = 'bold 9px "Meiryo", sans-serif';
+  const eqRight = 9 + frames * (frameW + 4) + ctx.measureText(eq).width + 6;
+  const W = Math.ceil(Math.max(eqRight, keyDone || keyItem ? 168 : 120));
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = '#1b1b24';
+  ctx.fillRect(3, 3, W, 46);
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = keyDone || keyItem ? '#ffe14a' : '#6a6a80';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(3.5, 3.5, W - 1, 45);
+
+  // カギのアイコン（拾うまでは暗い。出ている間は点滅）
+  if (!keyDone) ctx.globalAlpha = keyItem && Math.floor(performance.now() / 300) % 2 ? 0.9 : 0.35;
+  drawTile(T.key, 6, 5);
+  ctx.globalAlpha = 1;
+  ctx.font = 'bold 10px "Meiryo", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#2b1d2a';
+  const say = (text, x, y, color) => { ctx.strokeText(text, x, y); ctx.fillStyle = color; ctx.fillText(text, x, y); };
+  say('とびら ' + target, 24, 13, '#ffffff');
+  if (keyDone) say('カギ完成! とびらへ', 70, 13, '#ffe14a');
+  else if (keyItem) say('カギをとりにいこう', 70, 13, '#ffe14a');
+  else say('あと ' + remain(), 76, 13, '#9ff0ff');
+
+  // 10のまとまりの枠（5×2）。かけらは倒した敵の色で塗る
+  const colors = [];
+  pieces.forEach(n => { for (let i = 0; i < n; i++) colors.push(ENEMY_COLORS[n].o); });
+  for (let f = 0; f < frames; f++) {
+    const fx = 7 + f * (frameW + 4), fy = 26;
+    ctx.fillStyle = '#2b1d2a';
+    ctx.fillRect(fx, fy, frameW, 2 * CELL + 1);
+    for (let i = 0; i < 10; i++) {
+      const idx = f * 10 + i;
+      const cx = fx + 1 + (i % 5) * CELL, cy = fy + 1 + Math.floor(i / 5) * CELL;
+      if (idx >= target) { ctx.fillStyle = '#2b1d2a'; }            // 扉の数より先は使わない
+      else ctx.fillStyle = idx < colors.length ? colors[idx] : '#4a4a5e';
+      ctx.fillRect(cx, cy, CELL - 1, CELL - 1);
+      if (idx < colors.length) {                                   // ●っぽく見せるハイライト
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillRect(cx + 1, cy + 1, 2, 1);
+      }
+    }
+  }
+  if (eq) {
+    ctx.font = 'bold 9px "Meiryo", sans-serif';
+    say(eq, 9 + frames * (frameW + 4), 33, '#ffffff');
+  }
+}
+
+// ━━━━━━━━━━━━━━━━ 画面サイズ（整数倍で拡大してドットをきれいに） ━━━━━━━━━━━━━━━━
+function resize() {
+  // キャンバスの上のEXP、下の説明・接続ボタン（スマホでは十字キーも）の分をあける
+  const padH = matchMedia('(hover: hover) and (pointer: fine)').matches ? 130 : 270;
+  const scale = Math.max(1, Math.floor(Math.min(
+    (innerWidth - 20) / canvas.width,
+    (innerHeight - padH) / canvas.height)));
+  canvas.style.width = canvas.width * scale + 'px';
+  canvas.style.height = canvas.height * scale + 'px';
+}
+addEventListener('resize', resize);
+resize();
+
+// ━━━━━━━━━━━━━━━━ メインループ ━━━━━━━━━━━━━━━━
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+startFloor(1);
+sheet.onload = () => requestAnimationFrame(loop);
+</script>
+</body>
+</html>
