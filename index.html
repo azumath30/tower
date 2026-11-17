@@ -24,8 +24,9 @@
     overflow: hidden;
   }
   #left, #right {
-    width: 170px;
-    flex-shrink: 0;
+    flex: 1 1 0;                     /* 画面のあまりを左右で分けあう */
+    min-width: 200px;
+    max-width: 320px;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -44,13 +45,13 @@
   #hud {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 8px;
     color: #ffd84a;
     font-weight: bold;
   }
   #hud .stat { background: #26263a; border-radius: 8px; padding: 8px 12px; }
   #hud .lbl { font-size: 14px; color: #aaa; }
-  #hud .val { font-size: 40px; line-height: 1.1; text-align: right; }
+  #hud .val { font-size: 32px; line-height: 1.1; text-align: right; }
   #hud.up .exp { animation: expUp 0.4s; }
   @keyframes expUp { 0% { transform: scale(1.3); color: #fff; } 100% { transform: scale(1); } }
   #joy {
@@ -98,6 +99,70 @@
   #pad .right { grid-column: 3; grid-row: 2; }
   #pad .fire { grid-column: 3; grid-row: 1; background: #a8442e; }
   @media (hover: hover) and (pointer: fine) { #pad { display: none; } }
+
+  #hud .val.small { font-size: 28px; }
+  /* かい の らん：たして この数に する、を目立たせる */
+  #hud .floorStat { background: #3a2414; border: 3px solid #ff8a3a; }
+  #hud .floorStat .lbl { color: #ffc48a; }
+  #hud .floorStat .val { font-size: 48px; color: #ff9a4a; text-align: center; }
+  #hud .floorStat .sub { color: #ffc48a; font-size: 14px; }
+  #hud .sub { font-size: 13px; color: #aaa; text-align: right; }
+  /* レベル：次のレベルまでのバー */
+  .lvbar { height: 8px; background: #1b1b2a; border-radius: 4px; margin-top: 4px; overflow: hidden; }
+  #lvFill { height: 100%; width: 0; background: #7cf08a; border-radius: 4px; transition: width 0.3s; }
+  #levelStat.up { animation: lvUp 0.8s; }
+  @keyframes lvUp { 0% { transform: scale(1.15); background: #4a7a3a; } 100% { transform: scale(1); } }
+  .zukanBtn { background: #6a4bb0; font-size: 16px; padding: 10px; }
+  .zukanBtn:hover { background: #7d5dc8; }
+  .resetBtn { background: #44444f; font-size: 12px; padding: 5px; }
+  .resetBtn:hover { background: #5a5a68; }
+
+  /* ━━━ 組み合わせずかん（画面全体にかぶせる） ━━━ */
+  #zukan {
+    position: fixed; inset: 0;
+    background: rgba(10, 10, 20, 0.88);
+    display: none; align-items: center; justify-content: center;
+    z-index: 10;
+  }
+  #zukan.open { display: flex; }
+  #zukanPanel {
+    background: #22223a; border: 3px solid #6a4bb0; border-radius: 14px;
+    width: min(1100px, 94vw); max-height: 92vh;
+    display: flex; flex-direction: column;
+    padding: 16px 20px; box-sizing: border-box;
+  }
+  #zukanHead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  #zukanHead h2 { margin: 0; color: #ffd84a; font-size: 28px; }
+  #zukanTotal { color: #fff; font-size: 20px; font-weight: bold; }
+  #zukanClose { font-size: 16px; }
+  #zukanNote { color: #aaa; font-size: 13px; margin-bottom: 8px; }
+  #zukanList { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 6px; }
+  .zrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #2b2b46; border-radius: 8px; padding: 6px 10px; }
+  .zrow .door { width: 92px; flex-shrink: 0; color: #fff; font-weight: bold; font-size: 18px; }
+  .zrow .door small { color: #aaa; font-size: 12px; font-weight: normal; margin-left: 4px; }
+  .zcard {
+    min-width: 64px; padding: 6px 10px; border-radius: 8px; text-align: center;
+    font-size: 20px; font-weight: bold; font-family: "Consolas", "Meiryo", monospace;
+    background: #1b1b2a; color: #555; border: 2px dashed #444;
+  }
+  .zcard.got { background: #ffd84a; color: #2b1d2a; border: 2px solid #fff3b0; }
+  .zcard.complete { background: #7cf08a; border-color: #d8ffe0; }
+  .zothers { color: #9ff0ff; font-size: 14px; margin-left: 6px; }
+
+  /* ━━━ この階で あつめる カード（右のらん） ━━━ */
+  #cardSlots { display: flex; flex-direction: column; gap: 5px; margin-top: 5px; }
+  .slot {
+    font-size: 48px; font-weight: bold; line-height: 1.15;   /* 48px ＝ 約36pt */
+    text-align: center; border-radius: 10px; padding: 2px 4px;
+    font-family: "Consolas", "Meiryo", monospace;
+    background: #1b1b2a; color: #777; border: 2px dashed #555;
+  }
+  .slot.got { background: #ffd84a; color: #2b1d2a; border: 2px solid #fff3b0; }
+  .slot.building { color: #9ff0ff; border-color: #9ff0ff; }
+  .slot.boss { font-size: 24px; color: #d8b0ff; border-color: #8a48d8; }
+  .slot.boss.got { background: #8a48d8; color: #fff; border: 2px solid #d8b0ff; }
+  .slot.pop { animation: slotPop 0.5s; }
+  @keyframes slotPop { 0% { transform: scale(1.35); } 100% { transform: scale(1); } }
 </style>
 </head>
 <body>
@@ -105,12 +170,14 @@
 <div id="left">
   <div id="help">矢印キー / WASD / ジョイスティック で移動<br>スペースキー / ボタンR0 で玉<br>（敵の数だけ続けて当てる）</div>
   <div id="joy">
+    <button id="zukanBtn" class="serialBtn zukanBtn">📖 ずかん（Z / R9）</button>
     <label>スタートの階 <select id="floorSel"></select></label>
     <button id="joyBtn" class="serialBtn">ジョイスティック 接続</button>
     <span id="joyStatus" class="serialStatus">未接続</span>
     <button id="btnBtn" class="serialBtn">ボタン 接続</button>
     <span id="btnStatus" class="serialStatus">未接続</span>
     <button id="bgmBtn" class="serialBtn">♪ BGM オン</button>
+    <button id="resetBtn" class="serialBtn resetBtn">きろくを けす</button>
   </div>
 </div>
 
@@ -120,8 +187,12 @@
 <!-- 右：数字（階・EXP）と、タッチ端末用の十字キー -->
 <div id="right">
 <div id="hud">
-  <div class="stat"><div class="lbl">かい</div><div class="val"><span id="floorNo">1</span></div></div>
+  <div class="stat floorStat"><div class="lbl">かい</div><div class="val"><span id="floorNo">1</span></div><div class="sub">たして この数に!</div></div>
+  <div class="stat"><div class="lbl">カード（とびら <span id="cardTarget">1</span>）</div><div id="cardSlots"></div></div>
   <div class="stat"><div class="lbl">EXP</div><div class="val exp"><span id="exp">0</span></div></div>
+  <div class="stat" id="levelStat"><div class="lbl">レベル</div><div class="val"><span id="levelNo">1</span></div>
+    <div class="lvbar"><div id="lvFill"></div></div><div class="sub">つぎまで <span id="lvNext">20</span> EXP</div></div>
+  <div class="stat"><div class="lbl">ずかん</div><div class="val small"><span id="zukanCount">0</span></div><div class="sub">/ <span id="zukanMax">0</span> まい</div></div>
 </div>
 <div id="pad">
   <button class="up" data-dir="up">▲</button>
@@ -132,11 +203,27 @@
 </div>
 </div>
 
+<!-- 組み合わせずかん -->
+<div id="zukan">
+  <div id="zukanPanel">
+    <div id="zukanHead">
+      <h2>📖 くみあわせ ずかん</h2>
+      <div id="zukanTotal"></div>
+      <button id="zukanClose" class="serialBtn">とじる（Z）</button>
+    </div>
+    <div id="zukanNote">あつめた カードが のこるよ。「？」は まだ見つけていない カード。（2+1 と 1+2 は べつの カード）</div>
+    <div id="zukanList"></div>
+  </div>
+</div>
+
 <script>
 // ━━━━━━━━━━━━━━━━ 設定 ━━━━━━━━━━━━━━━━
 const TILE = 16;                 // タイル1枚の大きさ(px)
 const SHEET_COLS = 12;           // tiles.png の横のタイル数
-const VIEW_W = 20, VIEW_H = 14;  // 画面に映すタイル数（320×224px）
+let VIEW_W = 20;                 // 画面に映す横のタイル数（画面の形に合わせて 20〜24 に変わる）
+const VIEW_H = 14;               // 画面に映すたてのタイル数
+const VIEW_W_MIN = 20, VIEW_W_MAX = 24;   // 24 ＝ いちばん小さいマップ（1かい）の横はば
+const SIDE_MIN = 200;            // 左右の列の いちばん せまい はば(px)
 const WALK_SPEED = 3.5;          // 1秒に進むタイル数（もとは 5）
 
 const canvas = document.getElementById('game');
@@ -144,7 +231,8 @@ const ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 // ゲームの中の座標は 320×224 のまま。実際のキャンバスは画面の解像度で作り、
 // 絵はドットのまま拡大・文字はくっきり描く（resize() で倍率を設定）
-const SCREEN_W = VIEW_W * TILE, SCREEN_H = VIEW_H * TILE;
+let SCREEN_W = VIEW_W * TILE;    // resize() で 320〜384 に変わる
+const SCREEN_H = VIEW_H * TILE;
 
 // ━━━━━━━━━━━━━━━━ タイル番号（tiles.png の左上から 0,1,2…） ━━━━━━━━━━━━━━━━
 // 3×3 で組むタイル: [左上, 上, 右上, 左, 中, 右, 左下, 下, 右下]
@@ -451,7 +539,8 @@ const JOY_NAMES = { UP: 'up', RIGHT: 'right', DOWN: 'down', LEFT: 'left' };
 const JOY_ORDER = ['up', 'right', 'down', 'left'];   // STATE の並び順
 const BUTTON_ACTIONS = {
   R0: () => fire(),
-  // R1〜R9 はあとで使う（例: R1: () => useItem()）
+  R9: () => toggleZukan(),        // ずかんを開く・とじる
+  // R1〜R8 はあとで使う（例: R1: () => useItem()）
 };
 
 async function sendText(dev, text) {
@@ -654,6 +743,24 @@ const SE = {
     tone(f, f, 0.1, 'square', 0.06, i * 0.07)),
   key: () => [784, 988, 1175, 1568].forEach((f, i) =>               // カギができた
     tone(f, f, 0.16, 'triangle', 0.12, 0.3 + i * 0.1)),
+  // レベルアップの曲（約1.2秒）：ド ミ ソ ド↑ ／ ソ ド↑ ／ ミ↑―― ＋ 下で和音
+  levelUp: () => {
+    const D = 0.1;   // 1つぶの長さ
+    const mel = [[523, 0, 1], [659, 1, 1], [784, 2, 1], [1047, 3, 1.5],
+                 [784, 5, 1], [1047, 6, 1], [1319, 7, 4.5]];   // [音, はじまり, 長さ]（D の何倍か）
+    mel.forEach(([f, s, l]) => tone(f, f, l * D, 'square', 0.08, 0.05 + s * D));
+    [[262, 0, 3.5], [349, 4, 3], [392, 7, 4.5]].forEach(([f, s, l]) =>      // ド → ファ → ソ（下の音）
+      tone(f, f * 0.999, l * D, 'triangle', 0.14, 0.05 + s * D));
+    tone(2093, 2093, 0.4, 'triangle', 0.05, 0.05 + 7 * D);                  // さいごに キラッ
+    // 曲のあいだは BGM を小さくして、レベルアップを目立たせる
+    if (bgm.gain && audio) {
+      const t = audio.currentTime, g = bgm.gain.gain;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(bgm.on ? BGM_VOLUME * 0.25 : 0, t);
+      g.setValueAtTime(bgm.on ? BGM_VOLUME * 0.25 : 0, t + 1.25);
+      g.linearRampToValueAtTime(bgm.on ? BGM_VOLUME : 0, t + 1.6);
+    }
+  },
   clear: () => [523, 659, 784, 1047, 784, 1047].forEach((f, i) =>   // 階クリア
     tone(f, f, i === 5 ? 0.4 : 0.14, 'square', 0.06, i * 0.13)),
   dead: () => {                                                      // やられた
@@ -684,6 +791,20 @@ const BGM_MELODY = [
 const BGM_BASS_ROOTS = [48, 45, 41, 43, 48, 40, [41, 43], 48];   // C Am F G C Em F→G C
 const BGM_STEPS = 64;                        // 8小節 × 8分音符8つ
 
+// ボスのテーマ（ラの短調・速め。ボスが出ている間だけ鳴る）
+const BOSS_BGM_TEMPO = 156;
+const BOSS_BGM_MELODY = [
+  [69, 1], [69, 1], [72, 1], [69, 1], [76, 2], [74, 2],   // 1  ラ ラ ド ラ ミ― レ―
+  [72, 1], [71, 1], [69, 2], [68, 4],                     // 2  ド シ ラ― ソ#―――
+  [69, 1], [69, 1], [72, 1], [69, 1], [77, 2], [76, 2],   // 3  ラ ラ ド ラ ファ― ミ―
+  [74, 2], [72, 2], [71, 4],                              // 4  レ― ド― シ―――
+  [76, 1], [76, 1], [77, 1], [76, 1], [74, 2], [72, 2],   // 5  ミ ミ ファ ミ レ― ド―
+  [71, 2], [72, 2], [74, 4],                              // 6  シ― ド― レ―――
+  [72, 1], [71, 1], [69, 1], [71, 1], [72, 2], [71, 2],   // 7  ド シ ラ シ ド― シ―
+  [69, 4], [64, 2], [0, 2],                               // 8  ラ――― ミ―
+];
+const BOSS_BGM_BASS_ROOTS = [45, 40, 41, 43, 41, 43, [41, 40], 45];   // Am E F G F G F→E Am
+
 const bgm = {
   on: true,            // ON/OFF（ボタンと M キーで切り替え）
   started: false,
@@ -695,10 +816,18 @@ const bgm = {
   noise: null,
 };
 try { bgm.on = localStorage.getItem('dungeonBgm') !== 'off'; } catch (e) {}
-{
+// 曲を2つ用意する（ふつう / ボス）
+function makeTrack(tempo, melody, roots, boss) {
+  const melodyAt = {};
   let s = 0;
-  for (const [n, len] of BGM_MELODY) { if (n) bgm.melodyAt[s] = [n, len]; s += len; }
+  for (const [n, len] of melody) { if (n) melodyAt[s] = [n, len]; s += len; }
+  return { tempo, melodyAt, roots, boss };
 }
+const BGM_TRACKS = {
+  normal: makeTrack(BGM_TEMPO, BGM_MELODY, BGM_BASS_ROOTS, false),
+  boss: makeTrack(BOSS_BGM_TEMPO, BOSS_BGM_MELODY, BOSS_BGM_BASS_ROOTS, true),
+};
+bgm.track = 'normal';
 const midiHz = n => 440 * Math.pow(2, (n - 69) / 12);
 
 function bgmNote(type, freq, t, dur, vol) {
@@ -739,18 +868,24 @@ function bgmDrum(t, kick) {
 
 // 少し先（0.2秒ぶん）までの音を予約しておく（タイマーが遅れても音がずれない）
 function bgmSchedule() {
-  const stepDur = 60 / BGM_TEMPO / 2;
+  // ボスが出ている間はボスのテーマ。曲が変わったら頭から
+  const want = boss ? 'boss' : 'normal';
+  if (bgm.track !== want) { bgm.track = want; bgm.step = 0; }
+  const tr = BGM_TRACKS[bgm.track];
+  const stepDur = 60 / tr.tempo / 2;
   while (bgm.nextTime < audio.currentTime + 0.2) {
     const s = bgm.step, t = bgm.nextTime;
     // 階クリアのファンファーレ中はBGMを休む
     if (mode === 'play') {
-      const m = bgm.melodyAt[s];
+      const m = tr.melodyAt[s];
       if (m) bgmNote('square', midiHz(m[0]), t, m[1] * stepDur, 0.045);
       const bar = Math.floor(s / 8), inBar = s % 8;
-      let root = BGM_BASS_ROOTS[bar];
+      let root = tr.roots[bar];
       if (Array.isArray(root)) root = root[inBar < 4 ? 0 : 1];
-      bgmNote('triangle', midiHz(inBar % 2 ? root + 7 : root), t, stepDur, 0.11);
-      bgmDrum(t, inBar % 4 === 0);
+      // ボスのテーマは ベースが オクターブで はねて、バスドラムも多い（せまってくる感じ）
+      const bassNote = tr.boss ? (inBar % 2 ? root + 12 : root) : (inBar % 2 ? root + 7 : root);
+      bgmNote(tr.boss ? 'sawtooth' : 'triangle', midiHz(bassNote), t, stepDur, tr.boss ? 0.05 : 0.11);
+      bgmDrum(t, tr.boss ? inBar % 2 === 0 : inBar % 4 === 0);
     }
     bgm.step = (s + 1) % BGM_STEPS;
     bgm.nextTime += stepDur;
@@ -996,7 +1131,7 @@ function enemyAt(x, y, except = null) {
 }
 const heroOn = (x, y) => (hero.tx === x && hero.ty === y) || (hero.moving && hero.fromX === x && hero.fromY === y);
 // 敵どうしは重ならないが、主人公のいるマスには入ってくる（触れるとやられる）
-const canEnemyEnter = (x, y, self) => isWalkable(x, y) && !isDoor(x, y) && !enemyAt(x, y, self);
+const canEnemyEnter = (x, y, self) => isWalkable(x, y) && !isDoor(x, y) && !enemyAt(x, y, self) && !bossOn(x, y);
 
 function spawnEnemy(n, x, y) {
   // 場所の指定が無い・ふさがっている場合は、主人公から離れた空きマスを探す
@@ -1077,9 +1212,183 @@ function updateEnemies(dt) {
   ensureNeeded();
 }
 
+// ━━━━━━━━━━━━━━━━ ボス（5かいごと） ━━━━━━━━━━━━━━━━
+// ボスの たいりょく ＝ 階の数 × 2（5かい なら 10）。玉1発で 1 へる。
+// ざこと ちがって、たいりょくは 回復しない（やられても そのまま）。
+// ボスの階は「カードが ぜんぶ そろう」＋「ボスを たおす」で カギが出る。
+const BOSS_EVERY = 5;           // 何階ごとにボスが出るか
+const BOSS_HP_RATE = 2;         // たいりょく ＝ 階の数 × これ
+const BOSS_SPEED = 1.0;         // 1秒に進むマス数（主人公よりずっと遅い）
+const BOSS_CHASE_RANGE = 7;     // このマス数以内に来ると追いかけてくる
+const BOSS_STUN = 0.3;          // 玉が当たったとき止まる秒数
+const BOSS_TOUCH = 16;          // 主人公との距離(px)がこれより近いと「触れた」（体が大きい）
+const isBossFloor = () => floor % BOSS_EVERY === 0;
+let boss = null;                // { tx, ty, fromX, fromY, progress, moving, wait, flash, stun, bob, homeX, homeY, hp, maxHp }
+let bossBeaten = false;         // この階のボスを たおしたか
+
+// ボスの絵（16×16 を 2倍で描く）。c=王冠 C=王冠のかげ o=体 w=白目 p=黒目 m=口 f=足
+const BOSS_SHAPE = [
+  '................',
+  '....c.c..c.c....',
+  '....cccccccc....',
+  '....cCcCCcCc....',
+  '...oooooooooo...',
+  '..oooooooooooo..',
+  '.oowwoooooowwoo.',
+  '.oowpoooooowpoo.',
+  '.oooooooooooooo.',
+  '.oooommmmmmoooo.',
+  '.ooooommmmooooo.',
+  '.oooooooooooooo.',
+  '..oooooooooooo..',
+  '...oooooooooo...',
+  '...ff......ff...',
+  '................',
+];
+function makeBossSprite(flash) {
+  const grid = BOSS_SHAPE.map(r => r.split(''));
+  const body = (x, y) => grid[y] && grid[y][x] && grid[y][x] !== '.' && grid[y][x] !== 'k';
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    if (grid[y][x] === 'o' && !body(x + 1, y)) grid[y][x] = 'O';   // 右はしに影
+  }
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    if (grid[y][x] === '.' && (body(x - 1, y) || body(x + 1, y) || body(x, y - 1) || body(x, y + 1))) grid[y][x] = 'k';
+  }
+  const pal = { k: '#2b1d2a', o: '#8a48d8', O: '#6430a8', f: '#4a2280', c: '#ffd84a', C: '#d89a20',
+                w: '#ffffff', p: '#2b1d2a', m: '#5a1028' };
+  const c = document.createElement('canvas');
+  c.width = c.height = TILE;
+  const g = c.getContext('2d');
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const ch = grid[y][x];
+    if (ch === '.') continue;
+    g.fillStyle = flash && ch !== 'k' ? '#ffffff' : pal[ch];
+    g.fillRect(x, y, 1, 1);
+  }
+  return c;
+}
+const BOSS_SPRITE = { normal: makeBossSprite(false), flash: makeBossSprite(true) };
+
+const bossOn = (x, y) => boss && ((boss.tx === x && boss.ty === y) || (boss.moving && boss.fromX === x && boss.fromY === y));
+
+function spawnBoss() {
+  // 主人公から少しはなれた、歩いて行ける場所に置く（カードが そろったときに あらわれる）
+  const ok = ([x, y]) => !isDoor(x, y) && !enemyAt(x, y) && !heroOn(x, y);
+  const dist = ([x, y]) => Math.abs(x - hero.tx) + Math.abs(y - hero.ty);
+  let cands = reachable.filter(c => ok(c) && dist(c) >= 7 && dist(c) <= 12);
+  if (!cands.length) cands = reachable.filter(c => ok(c) && dist(c) >= 5);
+  if (!cands.length) cands = reachable.filter(ok);
+  const [x, y] = cands[Math.floor(Math.random() * cands.length)];
+  const hp = floor * BOSS_HP_RATE;
+  boss = { tx: x, ty: y, fromX: x, fromY: y, progress: 0, moving: false, wait: 1.5,
+           flash: 0, stun: 0, bob: 0, homeX: x, homeY: y, hp, maxHp: hp };
+}
+
+function updateBoss(dt) {
+  if (!boss) return;
+  boss.bob += dt;
+  if (boss.flash > 0) boss.flash -= dt;
+  if (boss.stun > 0) { boss.stun -= dt; return; }          // 玉が当たって止まっている
+  if (boss.moving) {
+    boss.progress += BOSS_SPEED * dt;
+    if (boss.progress >= 1) { boss.progress = 0; boss.moving = false; }
+    return;
+  }
+  boss.wait -= dt;
+  if (boss.wait > 0) return;
+  let step = null;
+  const near = invincible <= 0 && Math.abs(boss.tx - hero.tx) + Math.abs(boss.ty - hero.ty) <= BOSS_CHASE_RANGE;
+  const ok = ([dx, dy]) => (dx || dy) && canEnemyEnter(boss.tx + dx, boss.ty + dy, null);
+  if (near) {
+    boss.wait = 0.3;
+    const ddx = Math.sign(hero.tx - boss.tx), ddy = Math.sign(hero.ty - boss.ty);
+    const tries = Math.abs(hero.tx - boss.tx) >= Math.abs(hero.ty - boss.ty) ? [[ddx, 0], [0, ddy]] : [[0, ddy], [ddx, 0]];
+    step = tries.find(ok);
+  } else {
+    boss.wait = 1.0 + Math.random();
+    const s = Object.values(DIRS)[Math.floor(Math.random() * 4)];
+    if (ok(s)) step = s;
+  }
+  if (step) {
+    boss.fromX = boss.tx; boss.fromY = boss.ty;
+    boss.tx += step[0]; boss.ty += step[1];
+    boss.moving = true;
+  }
+}
+
+// 玉がボスの体に当たったか（2倍の大きさで判定）
+function bulletHitsBoss(b) {
+  if (!boss) return false;
+  const bp = pixelPos(boss);
+  return b.x >= bp.x - 6 && b.x <= bp.x + 22 && b.y >= bp.y - 14 && b.y <= bp.y + 15;
+}
+// 玉が当たると たいりょくが 1 へる（回復しない）
+function hitBoss() {
+  boss.hp--;
+  boss.stun = BOSS_STUN;
+  boss.flash = 0.12;
+  const bp = pixelPos(boss);
+  const count = boss.maxHp - boss.hp;                        // 何発目か
+  effects.push(countText(bp.x + 8, bp.y - 14, count));
+  SE.hit(((count - 1) % 12) + 1);
+  if (boss.hp <= 0) defeatBoss();
+}
+
+function defeatBoss() {
+  const bp = pixelPos(boss);
+  const bx = boss.tx, by = boss.ty;
+  effects.push(pokan(bp.x + 8, bp.y, 9));
+  effects.push(pokan(bp.x, bp.y + 8, 7));
+  effects.push(pokan(bp.x + 16, bp.y + 8, 4));
+  boss = null;
+  bossBeaten = true;
+  SE.pokan();
+  updateCardPanel(true);
+  if (cardsDone()) {
+    keyItem = { x: bx, y: by };                               // ボスのいた場所にカギが出る
+    effects.push(banner('ボスを たおした!', 'ボスのいた場所に カギが出たよ　とりにいこう', 2.6));
+    SE.key();
+  } else {
+    effects.push(banner('ボスを たおした!', 'あとは カードを あつめよう　のこり ' + (cardTotal() - got.length) + 'まい', 2.6));
+  }
+  addExp(floor * BOSS_HP_RATE);                               // ボスの分の EXP
+}
+
+function drawBoss(ax, ay) {
+  const bobY = Math.floor(boss.bob * 2) % 2;
+  const spr = BOSS_SPRITE[boss.flash > 0 ? 'flash' : 'normal'];
+  const shake = boss.stun > 0 ? (Math.floor(boss.stun * 30) % 2 ? 1 : -1) : 0;
+  ctx.drawImage(spr, ax - 8 + shake, ay - 16 - bobY, TILE * 2, TILE * 2);
+  // 頭の上に たいりょくの バーと 数
+  const w = 36, bx = ax + 8 - w / 2, by = ay - 21 - bobY;
+  ctx.fillStyle = '#2b1d2a';
+  ctx.fillRect(bx - 1, by - 1, w + 2, 5);
+  ctx.fillStyle = '#4a4a5e';
+  ctx.fillRect(bx, by, w, 3);
+  ctx.fillStyle = '#ff6a5a';
+  ctx.fillRect(bx, by, Math.round(w * boss.hp / boss.maxHp), 3);
+  outlineText('ボス ' + boss.hp, ax + 8, by - 7, '#ff9a8a', 10);
+}
+
 // ━━━━━━━━━━━━━━━━ 階（面）とカギ ━━━━━━━━━━━━━━━━
-// 扉に書かれた数と「ぴったり」になるように数字の敵を倒して、カギのかけらを集める。
 // 扉の数 ＝ 階の数（1かい＝とびら1、2かい＝とびら2 …）
+// 扉の数「ぴったり」の カードを あつめる。カードが ぜんぶ そろうと カギが出る。
+//   「？」  ＝ 1ぴきで ぴったり（例: とびら3 で 3 を たおす）
+//   「？＋？」＝ 2ひきで ぴったり（たおした じゅん。2+1 と 1+2 は べつの カード）
+// CARD_SLOTS: 階ごとの カードの まい数。single＝「？」、pair＝「？＋？」
+const CARD_SLOTS = {
+  1: { single: 1, pair: 0 },     // ？
+  2: { single: 1, pair: 1 },     // ？  ？＋？
+  3: { single: 1, pair: 2 },     // ？  ？＋？  ？＋？
+  4: { single: 1, pair: 3 },     // ？  ？＋？ ×3
+  5: { single: 1, pair: 3 },     // ？  ？＋？ ×3  ＋ ボス
+};
+const CARD_SLOTS_DEFAULT = { single: 0, pair: 4 };   // 6かい から: ？＋？ ×4
+function slotsFor(f) {
+  const s = CARD_SLOTS[f] || CARD_SLOTS_DEFAULT;
+  const pairs = cardList(f).filter(c => c.includes('+')).length;   // 作れる「？＋？」の数（大きい階は少ない）
+  return { single: f <= 9 ? s.single : 0, pair: Math.min(s.pair, pairs) };
+}
 // target: 扉の数  pool: 出てくる敵の数字（1 〜 階の数。ただし 9 まで）
 const FLOOR_SELECT_MAX = 20;    // 「スタートの階」で選べるいちばん上の階
 const floorDef = () => ({
@@ -1092,7 +1401,9 @@ const NEEDED_TIME = 1.5;        // 「あと○」の敵がいないとき、出
 
 let floor = 1;
 let target = 0;                 // 扉の数
-let pieces = [];                // 集めたかけら（倒した数字）
+let pieces = [];                // 作りかけの「？＋？」の1つめ（倒した数字）
+let got = [];                   // この階で あつめた カード（'3'、'2+1' など）
+let slots = { single: 1, pair: 0 };
 let keyDone = false;            // カギを拾ったか（扉が開く）
 let keyItem = null;             // かけらがそろって、地面に出ているカギ { x, y }
 let door = null;                // { x, y }
@@ -1104,11 +1415,189 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const piecesSum = () => pieces.reduce((a, b) => a + b, 0);
 const remain = () => target - piecesSum();
 function isDoor(x, y) { return door !== null && door.x === x && door.y === y; }
+const gotSingle = () => got.filter(c => !c.includes('+')).length;
+const gotPair = () => got.filter(c => c.includes('+')).length;
+const cardTotal = () => slots.single + slots.pair;
+const cardsDone = () => gotSingle() >= slots.single && gotPair() >= slots.pair;
+// n を 1ぴきめに たおしたとき、まだ もっていない カードを 作りはじめられるか
+function canStart(n) {
+  if (n === target) return gotSingle() < slots.single;
+  if (n > target || target - n > 9) return false;
+  return gotPair() < slots.pair && !got.includes(n + '+' + (target - n));
+}
+
+// 右のらんの カード
+function updateCardPanel(pop = false) {
+  document.getElementById('cardTarget').textContent = target;
+  const el = document.getElementById('cardSlots');
+  const singles = got.filter(c => !c.includes('+'));
+  const pairs = got.filter(c => c.includes('+'));
+  const items = [];
+  for (let i = 0; i < slots.single; i++) items.push(singles[i] ? { t: singles[i], cls: 'got' } : { t: '？', cls: '' });
+  let building = pieces.length === 1;
+  for (let i = 0; i < slots.pair; i++) {
+    if (pairs[i]) items.push({ t: pairs[i].replace('+', '＋'), cls: 'got' });
+    else if (building) { items.push({ t: pieces[0] + '＋？', cls: 'building' }); building = false; }
+    else items.push({ t: '？＋？', cls: '' });
+  }
+  if (isBossFloor()) items.push(bossBeaten ? { t: '👑 ボス OK!', cls: 'boss got' } : { t: '👑 ボス', cls: 'boss' });
+  const lastGot = got.length - 1;
+  el.innerHTML = '';
+  items.forEach(it => {
+    const d = document.createElement('div');
+    d.className = 'slot ' + it.cls;
+    d.textContent = it.t;
+    el.appendChild(d);
+  });
+  if (pop && lastGot >= 0) {
+    // いま とった カードを ぽよんと 動かす
+    const c = got[lastGot];
+    const idx = c.includes('+') ? slots.single + pairs.indexOf(c) : singles.indexOf(c);
+    if (el.children[idx]) el.children[idx].classList.add('pop');
+  }
+}
+
+// ━━━━━━━━━━━━━━━━ きろく（ブラウザに保存）：続きから・さいこう到達階・ずかん ━━━━━━━━━━━━━━━━
+// 同じパソコン・同じブラウザで開けば、次の時間も続きから遊べる
+const SAVE_KEY = 'dungeonSave';
+const save = { floor: 1, best: 1, exp: 0, cards: {}, others: {} };
+try { Object.assign(save, JSON.parse(localStorage.getItem(SAVE_KEY)) || {}); } catch (e) {}
+function saveGame() {
+  save.floor = floor;
+  save.exp = exp;
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {}
+}
+
+// とびらの数 t のカード一覧（1つの数字だけ ＋ 2つの数字の組み合わせ）。数字は1〜9
+// 例: 4 → 4, 3+1, 2+2, 1+3   （3+1 と 1+3 は べつの カード）
+function cardList(t) {
+  const list = [];
+  if (t <= 9) list.push(String(t));
+  for (let a = Math.min(9, t - 1); a >= 1 && t - a <= 9; a--) list.push(a + '+' + (t - a));
+  return list;
+}
+// ずかんに出す段（1 〜 さいこう到達階。少なくとも10まで見せて、先があることを見せる）
+const zukanRows = () => Math.max(10, save.best);
+function zukanCount() {
+  let got = 0, all = 0;
+  for (let t = 1; t <= zukanRows(); t++) {
+    const list = cardList(t);
+    all += list.length;
+    got += list.filter(c => (save.cards[t] || []).includes(c)).length;
+  }
+  return { got, all };
+}
+// とった カードを ずかんに 記録する。はじめての カードなら true
+function recordCard(t, c) {
+  save.cards[t] = save.cards[t] || [];
+  if (save.cards[t].includes(c)) return false;
+  save.cards[t].push(c);
+  return true;
+}
+// ━━━ レベル（EXP で上がる） ━━━
+// レベル L になるのに いる EXP の合計: Lv2=40, Lv3=100, Lv4=180, Lv5=280 …（少しずつ ふえる）
+// LEVEL_RATE を大きくすると レベルが上がりにくくなる（5 で Lv2=20、10 で Lv2=40）
+// EXP のもらい方: 敵を倒す＝その数 ／ ずかんに新しいカード＝+10 ／ とびらを制覇（ずかんの1段がそろう）＝+30
+const BONUS_NEW_CARD = 10;
+const BONUS_COMPLETE = 30;
+const LEVEL_RATE = 10;
+const expFor = L => LEVEL_RATE * (L - 1) * (L + 2);
+function levelOf(e) { let L = 1; while (expFor(L + 1) <= e) L++; return L; }
+let level = 1;
+function updateLevel(celebrate = true) {
+  const L = levelOf(exp);
+  const lo = expFor(L), hi = expFor(L + 1);
+  document.getElementById('levelNo').textContent = L;
+  document.getElementById('lvFill').style.width = Math.round(100 * (exp - lo) / (hi - lo)) + '%';
+  document.getElementById('lvNext').textContent = hi - exp;
+  if (celebrate && L > level) {
+    effects.push(levelUpFx(L));
+    SE.levelUp();
+    const st = document.getElementById('levelStat');
+    st.classList.remove('up'); void st.offsetWidth; st.classList.add('up');
+  }
+  level = L;
+}
+// EXP をふやす（表示とレベルも いっしょに 更新）
+function addExp(n) {
+  exp += n;
+  document.getElementById('exp').textContent = exp;
+  const hud = document.getElementById('hud');
+  hud.classList.remove('up'); void hud.offsetWidth; hud.classList.add('up');
+  updateLevel();
+  saveGame();
+}
+
+function updateSideInfo() {
+  const z = zukanCount();
+  document.getElementById('zukanCount').textContent = z.got;
+  document.getElementById('zukanMax').textContent = z.all;
+}
+
+// ずかんの画面
+const zukanEl = document.getElementById('zukan');
+let zukanOpen = false;
+function renderZukan() {
+  const list = document.getElementById('zukanList');
+  list.innerHTML = '';
+  for (let t = 1; t <= zukanRows(); t++) {
+    const cards = cardList(t), got = save.cards[t] || [], others = (save.others[t] || []).length;
+    const row = document.createElement('div');
+    row.className = 'zrow';
+    const n = cards.filter(c => got.includes(c)).length;
+    const complete = cards.length > 0 && n === cards.length;
+    row.innerHTML = `<div class="door">とびら ${t}<small>${n}/${cards.length}</small></div>`;
+    for (const c of cards) {
+      const el = document.createElement('div');
+      const has = got.includes(c);
+      el.className = 'zcard' + (has ? ' got' : '') + (has && complete ? ' complete' : '');
+      el.textContent = has ? c : c.replace(/\d/g, '？');   // まだのカードは「？+？」
+      row.appendChild(el);
+    }
+    if (others) {
+      const o = document.createElement('div');
+      o.className = 'zothers';
+      o.textContent = 'ほかの作り方 ' + others + 'しゅ';
+      row.appendChild(o);
+    }
+    list.appendChild(row);
+  }
+  const z = zukanCount();
+  document.getElementById('zukanTotal').textContent = `あつめた カード ${z.got} / ${z.all}`;
+}
+function toggleZukan(open = !zukanOpen) {
+  zukanOpen = open;
+  if (open) renderZukan();
+  zukanEl.classList.toggle('open', open);
+  held.length = 0;                 // 開いている間に押したキーで勝手に歩かないように
+}
+document.getElementById('zukanBtn').addEventListener('click', e => { e.currentTarget.blur(); toggleZukan(); });
+document.getElementById('zukanClose').addEventListener('click', e => { e.currentTarget.blur(); toggleZukan(false); });
+addEventListener('keydown', e => {
+  if (e.key === 'z' || e.key === 'Z') toggleZukan();
+  else if (e.key === 'Escape' && zukanOpen) toggleZukan(false);
+});
+
+// きろくを消す（先生用。確認してから）
+document.getElementById('resetBtn').addEventListener('click', e => {
+  e.currentTarget.blur();
+  if (!confirm('さいこう到達階・EXP・ずかんの きろくを ぜんぶ けしますか？')) return;
+  Object.assign(save, { floor: 1, best: 1, exp: 0, cards: {}, others: {} });
+  exp = 0;
+  document.getElementById('exp').textContent = exp;
+  updateLevel(false);
+  floorSel.value = 1;
+  startFloor(1);
+  updateSideInfo();
+});
 
 function startFloor(f) {
   floor = f;
   target = pick(floorDef().target);
   pieces = [];
+  got = [];
+  slots = slotsFor(f);
+  bossBeaten = false;
   keyDone = false;
   keyItem = null;
   mode = 'play';
@@ -1123,49 +1612,104 @@ function startFloor(f) {
   effects.length = 0;
   const count = enemyCount();
   for (let i = 0; i < count; i++) spawnEnemy(pick(floorDef().pool));
+  boss = null;                    // ボスは カードが そろってから 出てくる
   ensureNeeded(true);
   document.getElementById('floorNo').textContent = floor;
-  effects.push(banner(floor + 'かい（' + MAP_W + '×' + MAP_H + 'マス）', 'とびらの数 ' + target + ' ぴったりに　あつめよう', 2.6));
+  updateCardPanel();
+  saveGame();                     // 今いる階を保存（次は ここから続き）
+  const sub = 'とびら ' + target + ' ぴったりの カードを ' + cardTotal() + 'まい あつめよう';
+  if (isBossFloor()) {
+    effects.push(banner('ボスの かい!  ' + floor + 'かい', sub, 3.2,
+      'カードが そろうと ボスが あらわれる!'));
+  } else {
+    effects.push(banner(floor + 'かい（' + MAP_W + '×' + MAP_H + 'マス）', sub, 2.6));
+  }
 }
 
-// 「あと○」の数字の敵がいなければ出す（いないと先に進めなくなるので）
+// カードを作るのに いる数字の敵が いなければ出す（いないと先に進めなくなるので）
 function ensureNeeded(now = false) {
-  const r = remain();
-  // その階に出る数字より大きいときは出さない（組み合わせて作ってもらう）
-  if (mode !== 'play' || keyDone || keyItem || r < 1 || r > Math.max(...floorDef().pool)) return;
-  if (enemies.some(e => e.n === r) || respawns.some(s => s.n === r)) return;
-  if (now) spawnEnemy(r);
-  else respawns.push({ n: r, t: NEEDED_TIME });
+  if (mode !== 'play' || keyDone || keyItem || cardsDone()) return;
+  // 作りかけなら「あと○」の数、そうでなければ カードを作りはじめられる数
+  const need = (pieces.length ? [remain()] : floorDef().pool.filter(canStart)).filter(n => n >= 1 && n <= 9);
+  if (!need.length) return;
+  if (need.some(n => enemies.some(e => e.n === n) || respawns.some(s => s.n === n))) return;
+  const n = pick(need);
+  if (now) spawnEnemy(n);
+  else respawns.push({ n, t: NEEDED_TIME });
 }
 
-// 敵を倒したときに、その数字をかけらにする
+// 敵を倒したときに、その数字で カードを作る
 function collectPiece(n, x, y) {
-  if (mode !== 'play' || keyDone || keyItem) return;
-  const r = remain();
-  if (n > r) {
-    // 大きすぎ：かけらははじけて戻る（罰はなし）
-    effects.push(floatText(x, y - 26, 'おおきすぎ!  あと ' + r, '#ff9a8a'));
-    SE.bounce();
+  if (mode !== 'play' || keyDone || keyItem || cardsDone()) return;
+  const bounce = msg => { effects.push(floatText(x, y - 26, msg, '#ff9a8a')); SE.bounce(); };   // 罰はなし
+  if (pieces.length === 1) {
+    // 「？＋？」の 2ひきめ：のこりの数 ぴったりだけ
+    const r = remain();
+    if (n !== r) { bounce((n > r ? 'おおきすぎ!' : 'ちいさすぎ!') + '  あと ' + r); return; }
+    pieces.push(n);
+    getCard(pieces.join('+'), x, y);
     return;
   }
+  // 1ぴきめ
+  if (n > target) { bounce('おおきすぎ!  とびら ' + target); return; }
+  if (!canStart(n)) {
+    if (n === target) bounce('「' + n + '」は もう あるよ');
+    else if (target - n > 9) bounce('ちいさすぎ!  あと ' + (target - n) + ' は いない');
+    else if (gotPair() >= slots.pair) bounce('1ぴきで ' + target + ' ぴったりを さがそう');
+    else bounce(n + '+' + (target - n) + ' は もう あるよ');
+    return;
+  }
+  if (n === target) { getCard(String(n), x, y); return; }
   pieces.push(n);
-  if (n === r) {
+  updateCardPanel();
+  effects.push(floatText(x, y - 26, n + ' + ？　あと ' + remain(), '#9ff0ff'));
+  SE.piece();
+}
+
+// カードを とった
+function getCard(c, x, y) {
+  got.push(c);
+  pieces = [];
+  const isNew = recordCard(target, c);
+  // ずかんの この段（とびら target）が ぜんぶ そろった ＝ 制覇
+  // ただし 1回のクリアで ぜんぶ そろう階（1〜4かい）は、ボーナスなし（はじめに いきなり EXP が ふえないように）
+  const needReplay = cardList(target).length > cardTotal();
+  const complete = isNew && needReplay && cardList(target).every(k => save.cards[target].includes(k));
+  saveGame();
+  updateSideInfo();
+  updateCardPanel(true);
+  effects.push(floatText(x, y - 26, 'カード ' + c + (isNew ? '  NEW! +' + BONUS_NEW_CARD + ' EXP' : ''), '#ffe14a'));
+  if (complete) effects.push(floatText(x, y - 40, 'とびら ' + target + ' せいは!  +' + BONUS_COMPLETE + ' EXP', '#7cf08a'));
+  SE.piece();
+  if (isNew) tone(1568, 2093, 0.25, 'triangle', 0.1, 0.4);   // ずかんに はじめて入った音
+  if (!cardsDone()) {
+    effects.push(banner('カード ' + c.replace('+', ' + ') + ' = ' + target, 'のこり ' + (cardTotal() - got.length) + 'まい', 1.6));
+  } else if (isBossFloor() && !bossBeaten) {
+    // ボスの階：カードが そろうと ボスが あらわれる
+    spawnBoss();
+    boss.wait = 2.5;                // あらわれてすぐは 少し 止まっている
+    const bp = pixelPos(boss);
+    effects.push(pokan(bp.x + 8, bp.y, 7));
+    effects.push(banner('ボスが あらわれた!', 'たいりょく ' + boss.maxHp + '　玉を あてて たおそう（回復しない）', 2.8));
+    tone(110, 55, 0.6, 'sawtooth', 0.12);                       // ゴゴゴ…
+    tone(220, 110, 0.6, 'square', 0.05, 0.1);
+    updateCardPanel();
+  } else {
     // カギは、この階で最初に登場した場所（スタート地点）にあらわれる
     keyItem = { x: START_X, y: START_Y };
-    effects.push(floatText(x, y - 26, 'カギができた!', '#ffe14a'));
-    effects.push(banner('カギができた!', 'さいしょの場所に カギが出たよ　とりにいこう', 2.4));
+    effects.push(banner('カードが そろった!', 'さいしょの場所に カギが出たよ　とりにいこう', 2.4));
     SE.key();
-  } else {
-    effects.push(floatText(x, y - 26, 'あと ' + (r - n), '#9ff0ff'));
-    SE.piece();
   }
+  // ボーナス EXP（あとで 足すので、LEVEL UP! が いちばん上に出る）
+  const bonus = (isNew ? BONUS_NEW_CARD : 0) + (complete ? BONUS_COMPLETE : 0);
+  if (bonus) addExp(bonus);
 }
 
 function lockedHint() {
   if (lockedCool > 0) return;
   lockedCool = 1.2;
   const p = heroPixelPos();
-  const msg = keyItem ? 'カギを とってきて!' : 'カギがない!  あと ' + remain();
+  const msg = keyItem ? 'カギを とってきて!' : cardsDone() ? 'ボスを たおそう!' : 'カードを あつめよう  ' + got.length + '/' + cardTotal();
   effects.push(floatText(p.x + 8, p.y - 6, msg, '#ffffff'));
   SE.locked();
 }
@@ -1207,7 +1751,12 @@ function floorClear() {
   mode = 'clear';
   clearTimer = 2.8;
   bullets.length = 0;
-  effects.push(banner(floor + 'かい クリア!', pieces.join(' + ') + ' = ' + target, 2.8));
+  // さいこう到達階を更新して保存（カードは とったときに ずかんへ記録ずみ）
+  const newBest = floor + 1 > save.best;
+  if (newBest) save.best = floor + 1;
+  saveGame();
+  updateSideInfo();
+  effects.push(banner(floor + 'かい クリア!', got.join('　'), 2.8, newBest ? 'さいこう ' + save.best + 'かい!' : ''));
   SE.clear();
 }
 
@@ -1221,10 +1770,10 @@ function updateFloor(dt) {
 
 // スタートの階を選ぶ（先生が子どもに合わせて選ぶ）
 const floorSel = document.getElementById('floorSel');
-for (let f = 1; f <= FLOOR_SELECT_MAX; f++) {
+for (let f = 1; f <= Math.max(FLOOR_SELECT_MAX, save.best); f++) {
   const opt = document.createElement('option');
   opt.value = f;
-  opt.textContent = f + 'かい（とびら ' + f + '）';
+  opt.textContent = f + 'かい（とびら ' + f + '）' + (f % BOSS_EVERY === 0 ? ' ★ボス' : '');
   floorSel.appendChild(opt);
 }
 floorSel.addEventListener('change', () => {
@@ -1243,7 +1792,7 @@ let fireCool = 0;
 let fireQueue = 0;
 
 function fire() {
-  if (mode !== 'play') return;
+  if (mode !== 'play' || zukanOpen) return;
   if (fireQueue < FIRE_QUEUE_MAX) fireQueue++;
 }
 
@@ -1272,6 +1821,8 @@ function updateBullets(dt) {
     const tx = Math.floor(b.x / TILE), ty = Math.floor(b.y / TILE);
     // 木や建物、マップの外に当たったら消える
     if (!isWalkable(tx, ty)) { b.dead = true; effects.push(spark(b.x, b.y)); continue; }
+    // ボスに当たったか（ダメージはなく、少し止まる）
+    if (bulletHitsBoss(b)) { b.dead = true; effects.push(spark(b.x, b.y)); hitBoss(); continue; }
     // 敵に当たったか（敵の絵の範囲で判定）
     for (const e of enemies) {
       const ep = pixelPos(e);
@@ -1305,11 +1856,8 @@ function hitEnemy(e) {
   effects.push(pokan(ep.x + 8, ep.y + 8, e.n));
   respawns.push({ n: e.n, t: RESPAWN_TIME });
   SE.pokan();
+  addExp(e.n);
   collectPiece(e.n, ep.x + 8, ep.y + 8);
-  exp += e.n;
-  const hud = document.getElementById('hud');
-  document.getElementById('exp').textContent = exp;
-  hud.classList.remove('up'); void hud.offsetWidth; hud.classList.add('up');
 }
 
 // ━━━━━━━━━━━━━━━━ エフェクト ━━━━━━━━━━━━━━━━
@@ -1354,6 +1902,17 @@ function pokan(x, y, n) {     // 敵が消えるときの「ポカン！」
     ctx.globalAlpha = 1;
   } };
 }
+function pieceFly(x0, y0, x1, y1, n) {   // 倒した数が ボスへ飛んでいく玉
+  return { t: 0, life: 0.3, draw(cx, cy) {
+    const k = this.t / this.life;
+    const x = x0 + (x1 - x0) * k, y = y0 + (y1 - y0) * k - Math.sin(k * Math.PI) * 20;
+    ctx.fillStyle = '#2b1d2a';
+    ctx.fillRect(Math.round(x - cx) - 4, Math.round(y - cy) - 4, 9, 9);
+    ctx.fillStyle = ENEMY_COLORS[n].o;
+    ctx.fillRect(Math.round(x - cx) - 3, Math.round(y - cy) - 3, 7, 7);
+    outlineText(String(n), Math.round(x - cx), Math.round(y - cy) - 10, '#ffffff', 9);
+  } };
+}
 function outlineText(text, x, y, color, size) {
   ctx.font = `bold ${size}px "Meiryo", sans-serif`;
   ctx.textAlign = 'center';
@@ -1379,15 +1938,28 @@ function countText(x, y, n) {             // 当てた数「1」「2」「3」�
     ctx.globalAlpha = 1;
   } };
 }
-function banner(title, sub, life) {        // 画面のまん中に出る大きな文字
+function banner(title, sub, life, sub2 = '') {   // 画面のまん中に出る大きな文字（sub2 は3行目・ずかんなど）
+  // 前の大きな文字が残っていたら消して、重ならないようにする（LEVEL UP! は のこす）
+  for (let i = effects.length - 1; i >= 0; i--) if (effects[i].screen && !effects[i].keep) effects.splice(i, 1);
   return { t: 0, life, screen: true, draw() {
     const a = Math.min(1, this.t * 5, (this.life - this.t) * 3);
     ctx.globalAlpha = a * 0.45;          // 背景の黒をうすく（もとは 0.75）
     ctx.fillStyle = '#1b1b24';
-    ctx.fillRect(0, 84, SCREEN_W, 50);
+    ctx.fillRect(0, 84, SCREEN_W, sub2 ? 66 : 50);
     ctx.globalAlpha = a;
     outlineText(title, SCREEN_W / 2, 100, '#ffe14a', 16);
     outlineText(sub, SCREEN_W / 2, 121, '#ffffff', 10);
+    if (sub2) outlineText(sub2, SCREEN_W / 2, 138, '#7cf08a', 10);
+    ctx.globalAlpha = 1;
+  } };
+}
+function levelUpFx(L) {        // 画面の上のほうに出る「LEVEL UP!」（ほかの大きな文字と重ならない位置）
+  return { t: 0, life: 2.4, screen: true, keep: true, draw() {
+    const a = Math.min(1, this.t * 6, (this.life - this.t) * 3);
+    const s = this.t < 0.15 ? 22 : 18;                      // 出た瞬間だけ大きく
+    ctx.globalAlpha = a;
+    outlineText('LEVEL UP!', SCREEN_W / 2, 62, '#7cf08a', s);
+    outlineText('レベル ' + L, SCREEN_W / 2, 76, '#ffffff', 10);
     ctx.globalAlpha = 1;
   } };
 }
@@ -1413,6 +1985,11 @@ function checkTouch() {
     const ep = pixelPos(e);
     if (Math.abs(ep.x - p.x) < TOUCH_DIST && Math.abs(ep.y - p.y) < TOUCH_DIST) { heroDie(); return; }
   }
+  // ボス（体が大きいので、上のほうも当たる）
+  if (boss) {
+    const bp = pixelPos(boss), dy = p.y - bp.y;
+    if (Math.abs(bp.x - p.x) < BOSS_TOUCH && dy > -24 && dy < 12) { heroDie(); return; }
+  }
 }
 
 function heroDie() {
@@ -1424,17 +2001,21 @@ function heroDie() {
 }
 
 function revive() {
-  // 集めたかけらは 0 にもどる（カギができていても、なくなる）
-  const lost = piecesSum();
+  // 作りかけの「？＋？」だけ なくなる（とった カード・カギは そのまま）
+  const lost = pieces.length > 0;
   pieces = [];
-  keyDone = false;
-  keyItem = null;               // 落ちていたカギも消える
+  updateCardPanel();
   // 敵の「当てた数」も元にもどす
   for (const e of enemies) { e.hp = e.n; e.combo = 0; }
+  // ボスは元の場所にもどる（たいりょくは 回復しない）
+  if (boss) {
+    Object.assign(boss, { tx: boss.homeX, ty: boss.homeY, fromX: boss.homeX, fromY: boss.homeY,
+                          progress: 0, moving: false, wait: 1.5, stun: 0 });
+  }
   Object.assign(hero, { tx: START_X, ty: START_Y, fromX: START_X, fromY: START_Y, progress: 0, moving: false, dir: 'down' });
   mode = 'play';
   invincible = INVINCIBLE_TIME;
-  effects.push(banner('やられた…', lost ? 'かけらが 0 に もどった　あと ' + remain() : 'スタートから やりなおし', 2));
+  effects.push(banner('やられた…', (lost ? '作りかけの カードは なくなった　' : '') + 'とった カードは そのまま', 2));
 }
 
 function updateDead(dt) {
@@ -1478,6 +2059,7 @@ function update(dt) {
     if (invincible > 0) invincible -= dt;
     updateHero(dt);
     updateEnemies(dt);
+    updateBoss(dt);
     checkKeyPickup();
     checkTouch();
   } else if (mode === 'dead') {
@@ -1519,9 +2101,11 @@ function draw() {
   // 主人公と敵を、下にいるものほど手前になるよう y の順に描く
   const actors = enemies.map(e => ({ e, pos: pixelPos(e) }));
   if (mode === 'play' || mode === 'dead') actors.push({ hero: true, pos: p });   // 扉に入ったら主人公は消える
+  if (boss) actors.push({ boss: true, pos: pixelPos(boss) });
   actors.sort((a, b) => a.pos.y - b.pos.y);
   for (const a of actors) {
     const ax = Math.round(a.pos.x - camX), ay = Math.round(a.pos.y - camY);
+    if (a.boss) { drawBoss(ax, ay); continue; }
     if (a.hero) {
       if (mode === 'dead') { drawDeadHero(ax, ay); continue; }
       // 生き返った直後の「むてき」の間は点滅する
@@ -1648,10 +2232,10 @@ function drawKeyPanel() {
   const CELL = 7;
   const frameW = 5 * CELL + 1;
   const sum = piecesSum();
-  const eq = pieces.length > 1 ? pieces.join('+') + '=' + sum : pieces.join('');
+  const eq = pieces.length ? pieces[0] + '+？' : '';
   ctx.font = 'bold 9px "Meiryo", sans-serif';
   const eqRight = 9 + frames * (frameW + 4) + ctx.measureText(eq).width + 6;
-  const W = Math.ceil(Math.max(eqRight, keyDone || keyItem ? 168 : 120));
+  const W = Math.ceil(Math.max(eqRight, keyDone || keyItem || cardsDone() ? 168 : 130));
   ctx.globalAlpha = 0.55;          // 背景の黒をうすく（もとは 0.85）
   ctx.fillStyle = '#1b1b24';
   ctx.fillRect(3, 3, W, 46);
@@ -1673,7 +2257,9 @@ function drawKeyPanel() {
   say('とびら ' + target, 24, 13, '#ffffff');
   if (keyDone) say('カギ完成! とびらへ', 70, 13, '#ffe14a');
   else if (keyItem) say('カギをとりにいこう', 70, 13, '#ffe14a');
-  else say('あと ' + remain(), 76, 13, '#9ff0ff');
+  else if (cardsDone()) say('ボスを たおそう', 70, 13, '#ff9a8a');
+  else if (pieces.length) say('あと ' + remain(), 76, 13, '#9ff0ff');
+  else say('カード ' + got.length + '/' + cardTotal(), 76, 13, '#9ff0ff');
 
   // 10のまとまりの枠（5×2）。かけらは倒した敵の色で塗る
   const colors = [];
@@ -1702,12 +2288,16 @@ function drawKeyPanel() {
 
 // ━━━━━━━━━━━━━━━━ 画面サイズ（整数倍で拡大してドットをきれいに） ━━━━━━━━━━━━━━━━
 function resize() {
-  // 左右の列（170px×2）とすき間・枠の分だけあけて、上下いっぱいまで拡大する
-  // （整数倍にこだわらず、画面にぴったり合わせて大きく表示）
-  const sideW = 170 * 2 + 8 * 2 + 8 + 4;   // 左右の列 + すき間 + body の余白 + 枠
-  const scale = Math.max(1, Math.min(
-    (innerWidth - sideW) / SCREEN_W,
-    (innerHeight - 8 - 4) / SCREEN_H));
+  // 上下いっぱいまで拡大し、横に あまりが あれば ゲーム画面を横に広げる（映るマスが ふえる）
+  // それでも あまった分は、左右の列が広がって うめる
+  const sideW = SIDE_MIN * 2 + 8 * 2 + 8 + 4;   // 左右の列 + すき間 + body の余白 + 枠
+  const availW = innerWidth - sideW, availH = innerHeight - 8 - 4;
+  let scale = availH / SCREEN_H;
+  let w = Math.min(VIEW_W_MAX * TILE, availW / scale);   // 横は いちばん広くて VIEW_W_MAX マス
+  if (w < VIEW_W_MIN * TILE) { w = VIEW_W_MIN * TILE; scale = availW / w; }   // 横長でない画面
+  scale = Math.max(1, scale);
+  SCREEN_W = Math.floor(w);
+  VIEW_W = Math.ceil(SCREEN_W / TILE);
   const cssW = Math.floor(SCREEN_W * scale), cssH = Math.floor(SCREEN_H * scale);
   canvas.style.width = cssW + 'px';
   canvas.style.height = cssH + 'px';
@@ -1727,11 +2317,17 @@ let last = performance.now();
 function loop(now) {
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;
-  update(dt);
+  if (!zukanOpen) update(dt);      // ずかんを見ている間はゲームを止める
   draw();
   requestAnimationFrame(loop);
 }
-startFloor(1);
+// 前回の続きから始める（はじめての時は1かい）
+exp = save.exp || 0;
+document.getElementById('exp').textContent = exp;
+updateLevel(false);
+floorSel.value = Math.min(save.floor, floorSel.options.length);
+startFloor(save.floor || 1);
+updateSideInfo();
 sheet.onload = () => requestAnimationFrame(loop);
 </script>
 </body>
